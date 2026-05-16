@@ -537,7 +537,7 @@ public:
 		webgpuMemoryPool->NewFrame();
 		webgpuCommandList = LLGI::CreateSharedPtr(webgpuCommandListPool->Get(true));
 
-		LLGI::Color8 clearColor(0, 0, 0, 0);
+		LLGI::Color8 clearColor(0, 0, 0, 255);
 		webgpuRenderPass->SetClearColor(clearColor);
 		webgpuRenderPass->SetIsColorCleared(true);
 		webgpuRenderPass->SetIsDepthCleared(true);
@@ -613,7 +613,7 @@ public:
 			EndWebGPURenderPass();
 		}
 
-		auto currentScreen = webgpuPlatform->GetCurrentScreen(LLGI::Color8(), true);
+		auto currentScreen = webgpuPlatform->GetCurrentScreen(LLGI::Color8(0, 0, 0, 255), true);
 		if (currentScreen == nullptr)
 		{
 			webgpuCommandList->End();

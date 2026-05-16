@@ -106,6 +106,7 @@ export interface NativeModule {
   _isPowerOfTwo?: (image: { width: number; height: number }) => boolean;
   preinitializedWebGPUDevice?: GPUDevice;
   effekseerLastWebGPUError?: string;
+  effekseerWebGPUErrors?: string[];
   __effekseerImportWebGPURenderPassEncoder?: (renderPassEncoder: GPURenderPassEncoder) => number;
 }
 
@@ -372,7 +373,7 @@ async function requestWebGPUDevice(options: WebGPURuntimeOptions): Promise<GPUDe
     throw new WebGPUUnavailableError("Failed to request a WebGPU adapter.");
   }
 
-  const optional = ["float32-filterable", "texture-formats-tier2"] as GPUFeatureName[];
+  const optional = ["float32-filterable", "texture-formats-tier2", "texture-compression-bc"] as GPUFeatureName[];
   const requiredFeatures = optional.filter((feature) => adapter.features.has(feature));
   return adapter.requestDevice({
     ...options.deviceDescriptor,
@@ -598,6 +599,10 @@ export function getLastWebGPUError(): string | undefined {
   return runtimes.get("webgpu")?.module.effekseerLastWebGPUError;
 }
 
+export function getWebGPUErrors(): readonly string[] {
+  return runtimes.get("webgpu")?.module.effekseerWebGPUErrors ?? [];
+}
+
 function getRuntime(backend: BackendType): EffekseerRuntime {
   const runtime = runtimes.get(backend);
   if (!runtime) {
@@ -726,7 +731,7 @@ abstract class BaseEffekseerContext {
     const effect = new EffekseerEffect(this, options);
     if (typeof data === "string") {
       effect.baseDir = data.includes("/") ? data.slice(0, data.lastIndexOf("/") + 1) : "";
-      await effect.loadFromBuffer(await fetchArrayBuffer(data));
+      await effect.loadFromBuffer(await fetchArrayBuffer(options.redirect ? options.redirect(data) : data));
     } else {
       await effect.loadFromBuffer(data);
     }

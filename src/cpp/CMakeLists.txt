@@ -69,10 +69,8 @@ elseif(EFK_WEB_BACKEND STREQUAL "webgpu")
     ${llgi_sources}
     ${EFFEKSEER_DIR}/Dev/Cpp/EffekseerRendererLLGI/EffekseerRendererLLGI/*.cpp
     ${EFFEKSEER_DIR}/Dev/Cpp/EffekseerRendererWebGPU/EffekseerRendererWebGPU/*.cpp
-    ${EFFEKSEER_DIR}/Dev/Cpp/EffekseerMaterialCompiler/Common/*.cpp
-    ${EFFEKSEER_DIR}/Dev/Cpp/EffekseerMaterialCompiler/GLSLGenerator/*.cpp
+    ${EFFEKSEER_DIR}/Dev/Cpp/EffekseerMaterialCompiler/WGSLGenerator/*.cpp
   )
-  list(FILTER backend_sources EXCLUDE REGEX "EffekseerMaterialCompilerWebGPU\\.cpp$")
 else()
   message(FATAL_ERROR "Unsupported EFK_WEB_BACKEND: ${EFK_WEB_BACKEND}")
 endif()

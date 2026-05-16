@@ -1,6 +1,7 @@
 import {
   createContext,
   getLastWebGPUError,
+  getWebGPUErrors,
   initRuntime,
   setLogEnabled,
 } from "../../dist/index.js";
@@ -18,6 +19,23 @@ const frames = Number(params.get("frames") || "30");
 function report(payload) {
   result.textContent = JSON.stringify(payload, null, 2);
   window.__effekseerSmokeResult = payload;
+}
+
+function encodeResourceUrl(url) {
+  const normalized = url.replace(/\\/g, "/");
+  const prefix = normalized.startsWith("/") ? "/" : "";
+  const segments = [];
+  for (const segment of normalized.replace(/^\/+/, "").split("/")) {
+    if (!segment || segment === ".") {
+      continue;
+    }
+    if (segment === "..") {
+      segments.pop();
+      continue;
+    }
+    segments.push(encodeURIComponent(segment));
+  }
+  return prefix + segments.join("/");
 }
 
 function analyzePixelRows(pixels, width, height, bytesPerRow) {
@@ -203,7 +221,7 @@ async function main() {
     webgpuDevice = context.device;
   }
 
-  const effect = await context.loadEffect(effectPath);
+  const effect = await context.loadEffect(effectPath, { redirect: encodeResourceUrl });
   const handle = context.play(effect, 0, 0, 0);
   context.setProjectionPerspective(45, canvas.width / canvas.height, 1, 1000);
   context.setCameraLookAt(0, 0, 20, 0, 0, 0);
@@ -237,6 +255,7 @@ async function main() {
     changedPixels: pixelStats?.changedPixels,
     pixelStats,
     webgpuError: getLastWebGPUError(),
+    webgpuErrors: getWebGPUErrors(),
   };
 
   context.releaseEffect(effect);
@@ -252,5 +271,6 @@ main().catch((error) => {
     message: error instanceof Error ? error.message : String(error),
     stack: error instanceof Error ? error.stack : undefined,
     webgpuError: getLastWebGPUError(),
+    webgpuErrors: getWebGPUErrors(),
   });
 });

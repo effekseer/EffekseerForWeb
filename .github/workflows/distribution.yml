@@ -32,6 +32,14 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
+      - name: Read package metadata
+        id: package
+        shell: bash
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=EffekseerForWeb${version}" >> "$GITHUB_OUTPUT"
+
       - name: Install Emscripten SDK
         shell: bash
         run: |
@@ -54,8 +62,8 @@ jobs:
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: EffekseerForWeb-distribution
-          path: artifacts/*
+          name: ${{ steps.package.outputs.artifact_name }}
+          path: artifacts
           if-no-files-found: error
 
       - name: Publish GitHub release assets

@@ -1,83 +1,46 @@
 import { createServer } from "node:http";
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { extname, join, normalize, resolve, sep } from "node:path";
+import { extname, join, normalize, relative, resolve, sep } from "node:path";
 import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
+const renderableExtensions = new Set([".efk", ".efkefc"]);
 
-const defaultCases = [
-  {
-    name: "webgl-basic",
-    backend: "webgl",
-    mode: "canvas",
-    effect: "TestData/Effects/10/Sprite_Parameters1.efk",
-  },
-  {
-    name: "webgl-material",
-    backend: "webgl",
-    mode: "canvas",
-    effect: "TestData/Effects/15/Material_Img6.efkefc",
-  },
-  {
-    name: "webgl-curve",
-    backend: "webgl",
-    mode: "canvas",
-    effect: "TestData/Effects/16/Curve01.efkefc",
-  },
-  {
-    name: "webgl-model",
-    backend: "webgl",
-    mode: "canvas",
-    effect: "TestData/Effects/16/AnimatedModel01.efkefc",
-  },
-  {
-    name: "webgpu-canvas",
-    backend: "webgpu",
-    mode: "canvas",
-    effect: "TestData/Effects/10/Sprite_Parameters1.efk",
-  },
-  {
-    name: "webgpu-external",
-    backend: "webgpu",
-    mode: "external",
-    effect: "TestData/Effects/10/Sprite_Parameters1.efk",
-  },
-  {
-    name: "webgpu-texture",
-    backend: "webgpu",
-    mode: "external",
-    effect: "TestData/Effects/16/AlphaBlendTexture01.efkefc",
-    minColorBuckets: 64,
-    maxWhiteLikeRatio: 0.25,
-  },
-  {
-    name: "webgpu-material",
-    backend: "webgpu",
-    mode: "external",
-    effect: "TestData/Effects/15/Material_Img6.efkefc",
-    minColorBuckets: 8,
-    maxWhiteLikeRatio: 0.25,
-  },
-];
+function timestamp() {
+  const now = new Date();
+  const pad = (value) => String(value).padStart(2, "0");
+  return [
+    now.getFullYear(),
+    pad(now.getMonth() + 1),
+    pad(now.getDate()),
+    `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`,
+  ].join("-");
+}
 
 function parseArgs(argv) {
   const options = {
+    backend: "webgpu",
+    mode: "canvas",
     browser: process.env.CHROME_BIN || process.env.EDGE_BIN || "",
     port: 0,
     frames: 30,
     timeout: 45000,
-    caseName: "",
-    effect: "",
-    allowWebGPUSkip: process.env.EFK_ALLOW_WEBGPU_SKIP === "1",
+    input: "TestData",
+    out: "",
+    continueOnError: true,
   };
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     const next = () => argv[++i] ?? "";
-    if (arg === "--browser") {
+    if (arg === "--backend") {
+      options.backend = next();
+    } else if (arg === "--mode") {
+      options.mode = next();
+    } else if (arg === "--browser") {
       options.browser = next();
     } else if (arg === "--port") {
       options.port = Number(next());
@@ -85,15 +48,22 @@ function parseArgs(argv) {
       options.frames = Number(next());
     } else if (arg === "--timeout") {
       options.timeout = Number(next());
-    } else if (arg === "--case") {
-      options.caseName = next();
-    } else if (arg === "--effect") {
-      options.effect = next();
-    } else if (arg === "--allow-webgpu-skip") {
-      options.allowWebGPUSkip = true;
+    } else if (arg === "--input") {
+      options.input = next();
+    } else if (arg === "--out") {
+      options.out = next();
+    } else if (arg === "--fail-fast") {
+      options.continueOnError = false;
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
+  }
+
+  if (options.backend !== "webgl" && options.backend !== "webgpu") {
+    throw new Error(`Unsupported backend: ${options.backend}`);
+  }
+  if (options.mode !== "canvas" && options.mode !== "external") {
+    throw new Error(`Unsupported mode: ${options.mode}`);
   }
 
   return options;
@@ -315,6 +285,32 @@ async function waitForSmokeResult(client, timeout) {
   throw new Error(`Timed out while waiting for smoke result.${details}`);
 }
 
+async function captureCanvasPng(client) {
+  const evaluated = await client.send("Runtime.evaluate", {
+    expression: `(() => {
+      const canvas = document.getElementById("canvas");
+      const rect = canvas.getBoundingClientRect();
+      return { x: rect.x, y: rect.y, width: rect.width, height: rect.height, scale: window.devicePixelRatio || 1 };
+    })()`,
+    returnByValue: true,
+  });
+  const rect = evaluated?.result?.value;
+  const width = Math.max(1, Math.round(rect?.width ?? 640));
+  const height = Math.max(1, Math.round(rect?.height ?? 360));
+  const screenshot = await client.send("Page.captureScreenshot", {
+    format: "png",
+    captureBeyondViewport: false,
+    clip: {
+      x: Math.max(0, rect?.x ?? 0),
+      y: Math.max(0, rect?.y ?? 0),
+      width,
+      height,
+      scale: rect?.scale ?? 1,
+    },
+  });
+  return Buffer.from(screenshot.data, "base64");
+}
+
 async function stopBrowser(child) {
   if (child.exitCode !== null || child.signalCode !== null) {
     return;
@@ -341,13 +337,88 @@ async function removeProfileDir(userDataDir) {
   }
 }
 
-async function runCase(browser, origin, testCase, options) {
-  const url = new URL("/tests/browser/smoke.html", origin);
-  url.searchParams.set("backend", testCase.backend);
-  url.searchParams.set("mode", testCase.mode);
-  url.searchParams.set("effect", `/${options.effect || testCase.effect}`);
-  url.searchParams.set("frames", String(options.frames));
+async function collectEffects(dir) {
+  const entries = await readdir(dir, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    const fullPath = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...await collectEffects(fullPath));
+    } else if (entry.isFile() && renderableExtensions.has(extname(entry.name).toLowerCase())) {
+      files.push(fullPath);
+    }
+  }
+  return files.sort((a, b) => a.localeCompare(b));
+}
 
+function safeFileName(index, effectPath) {
+  const body = effectPath
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "")
+    .replace(/[^A-Za-z0-9._-]+/g, "_");
+  return `${String(index + 1).padStart(3, "0")}_${body}.png`;
+}
+
+function htmlEscape(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function makeIndexHtml(summary) {
+  const cards = summary.results.map((result) => {
+    const status = result.ok ? "ok" : "failed";
+    const stats = result.pixelStats
+      ? `${result.pixelStats.changedPixels ?? ""} px, ${result.pixelStats.colorBuckets ?? ""} buckets`
+      : "no pixel stats";
+    const image = result.screenshot
+      ? `<img src="${htmlEscape(result.screenshot)}" alt="${htmlEscape(result.effect)}" loading="lazy">`
+      : `<div class="missing">No screenshot</div>`;
+    return `<article class="${status}">
+      ${image}
+      <h2>${htmlEscape(result.effect)}</h2>
+      <p>${htmlEscape(status)} / ${htmlEscape(stats)}</p>
+      ${result.message ? `<pre>${htmlEscape(result.message)}</pre>` : ""}
+    </article>`;
+  }).join("\n");
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Effekseer TestData Screenshots</title>
+  <style>
+    body { margin: 0; background: #20242a; color: #f5f7fa; font-family: system-ui, sans-serif; }
+    header { padding: 20px 24px; border-bottom: 1px solid #3a414b; }
+    h1 { margin: 0 0 8px; font-size: 24px; }
+    .meta { color: #b7c0cc; }
+    main { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; padding: 16px; }
+    article { background: #2a3038; border: 1px solid #3a414b; border-radius: 6px; overflow: hidden; }
+    article.failed { border-color: #d26868; }
+    img, .missing { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: contain; background: #11151a; }
+    .missing { display: grid; place-items: center; color: #f2a4a4; }
+    h2 { margin: 10px 12px 4px; font-size: 13px; overflow-wrap: anywhere; }
+    p { margin: 0 12px 12px; color: #b7c0cc; font-size: 12px; }
+    pre { margin: 0 12px 12px; padding: 8px; max-height: 140px; overflow: auto; background: #15191f; color: #ffd4d4; font-size: 11px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Effekseer TestData Screenshots</h1>
+    <div class="meta">backend=${htmlEscape(summary.backend)}, mode=${htmlEscape(summary.mode)}, frames=${summary.frames}, total=${summary.total}, ok=${summary.okCount}, failed=${summary.failedCount}</div>
+  </header>
+  <main>
+    ${cards}
+  </main>
+</body>
+</html>`;
+}
+
+async function runCapture(browser, origin, effects, options, outDir) {
+  const testCase = { backend: options.backend };
   const tmpRoot = join(root, ".tmp");
   await mkdir(tmpRoot, { recursive: true });
   const userDataDir = await mkdtemp(join(tmpRoot, "browser-profile-"));
@@ -364,41 +435,63 @@ async function runCase(browser, origin, testCase, options) {
 
   let client;
   try {
-    const port = await waitForDevToolsPort(userDataDir, Math.min(options.timeout, 15000));
-    const target = await createTarget(port, url.href);
+    const devtoolsPort = await waitForDevToolsPort(userDataDir, Math.min(options.timeout, 15000));
+    const target = await createTarget(devtoolsPort, "about:blank");
     client = new CDPClient(target.webSocketDebuggerUrl);
     await client.send("Runtime.enable");
     await client.send("Log.enable");
     await client.send("Page.enable");
-    const result = await waitForSmokeResult(client, options.timeout);
-    if (!result.ok) {
-      const message = result.message ?? "unknown browser smoke failure";
-      if (testCase.backend === "webgpu" && options.allowWebGPUSkip && /WebGPU|navigator\.gpu|GPU/.test(message)) {
-        return { ...result, skipped: true, stderr };
+
+    const results = [];
+    for (let i = 0; i < effects.length; i++) {
+      const effect = effects[i];
+      const effectPath = relative(root, effect).replace(/\\/g, "/");
+      const url = new URL("/tests/browser/smoke.html", origin);
+      url.searchParams.set("backend", options.backend);
+      url.searchParams.set("mode", options.mode);
+      url.searchParams.set("effect", `/${effectPath}`);
+      url.searchParams.set("frames", String(options.frames));
+
+      const result = {
+        effect: effectPath,
+        ok: false,
+        screenshot: "",
+        pixelStats: null,
+        message: "",
+      };
+
+      try {
+        await client.send("Page.navigate", { url: url.href });
+        const smoke = await waitForSmokeResult(client, options.timeout);
+        result.ok = Boolean(smoke.ok);
+        result.pixelStats = smoke.pixelStats ?? null;
+        const webgpuErrors = Array.isArray(smoke.webgpuErrors) ? smoke.webgpuErrors.filter(Boolean) : [];
+        if (!smoke.ok) {
+          result.message = smoke.message ?? "unknown browser smoke failure";
+          if (webgpuErrors.length > 0) {
+            result.message += `\nWebGPU errors:\n${webgpuErrors.join("\n")}`;
+          }
+        } else if (smoke.webgpuError) {
+          result.ok = false;
+          result.message = `WebGPU validation error: ${webgpuErrors.length > 0 ? webgpuErrors.join("\n") : smoke.webgpuError}`;
+        }
+
+        const png = await captureCanvasPng(client);
+        const screenshotName = safeFileName(i, effectPath);
+        await writeFile(join(outDir, screenshotName), png);
+        result.screenshot = screenshotName;
+      } catch (error) {
+        result.message = error instanceof Error ? error.stack || error.message : String(error);
+        if (!options.continueOnError) {
+          throw error;
+        }
       }
-      throw new Error(`${testCase.name} failed: ${message}\n${result.stack ?? ""}\n${stderr}`);
-    }
-    if (typeof result.changedPixels === "number" && result.changedPixels <= 0) {
-      throw new Error(`${testCase.name} rendered no changed pixels.\n${JSON.stringify(result, null, 2)}`);
+
+      results.push(result);
+      console.log(`[${i + 1}/${effects.length}] ${result.ok ? "ok" : "failed"} ${effectPath}`);
     }
 
-    const needsPixelStats = testCase.minColorBuckets !== undefined || testCase.maxWhiteLikeRatio !== undefined;
-    if (needsPixelStats && !result.pixelStats) {
-      throw new Error(`${testCase.name} did not report pixel statistics.\n${JSON.stringify(result, null, 2)}`);
-    }
-    if (testCase.minColorBuckets !== undefined && result.pixelStats.colorBuckets < testCase.minColorBuckets) {
-      throw new Error(`${testCase.name} rendered too few color buckets.\n${JSON.stringify(result, null, 2)}`);
-    }
-    if (testCase.maxWhiteLikeRatio !== undefined && result.pixelStats.changedPixels > 0) {
-      const whiteLikeRatio = result.pixelStats.whiteLikePixels / result.pixelStats.changedPixels;
-      if (whiteLikeRatio > testCase.maxWhiteLikeRatio) {
-        throw new Error(`${testCase.name} rendered mostly white fallback pixels.\n${JSON.stringify(result, null, 2)}`);
-      }
-    }
-    if (result.webgpuError) {
-      throw new Error(`${testCase.name} reported WebGPU validation error: ${result.webgpuError}`);
-    }
-    return { ...result, stderr };
+    return { results, stderr };
   } finally {
     client?.close();
     await stopBrowser(child);
@@ -408,11 +501,13 @@ async function runCase(browser, origin, testCase, options) {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
-  const cases = options.caseName
-    ? defaultCases.filter((testCase) => testCase.name === options.caseName)
-    : defaultCases;
-  if (cases.length === 0) {
-    throw new Error(`Unknown smoke test case: ${options.caseName}`);
+  const inputDir = resolve(root, options.input);
+  const outDir = resolve(root, options.out || join("artifacts", "testdata-screenshots", `${options.backend}-${timestamp()}`));
+  await mkdir(outDir, { recursive: true });
+
+  const effects = await collectEffects(inputDir);
+  if (effects.length === 0) {
+    throw new Error(`No .efk or .efkefc files found under ${inputDir}`);
   }
 
   const browser = findBrowser(options.browser);
@@ -421,14 +516,33 @@ async function main() {
   const origin = `http://127.0.0.1:${address.port}`;
 
   try {
-    const results = [];
-    for (const testCase of cases) {
-      results.push({
-        name: testCase.name,
-        ...(await runCase(browser, origin, testCase, options)),
-      });
-    }
-    console.log(JSON.stringify({ ok: true, browser, origin, results }, null, 2));
+    const { results, stderr } = await runCapture(browser, origin, effects, options, outDir);
+    const okCount = results.filter((result) => result.ok).length;
+    const summary = {
+      ok: okCount === results.length,
+      backend: options.backend,
+      mode: options.mode,
+      frames: options.frames,
+      input: relative(root, inputDir).replace(/\\/g, "/"),
+      output: relative(root, outDir).replace(/\\/g, "/"),
+      total: results.length,
+      okCount,
+      failedCount: results.length - okCount,
+      browser,
+      stderr,
+      results,
+    };
+    await writeFile(join(outDir, "summary.json"), JSON.stringify(summary, null, 2));
+    await writeFile(join(outDir, "index.html"), makeIndexHtml(summary));
+    console.log(JSON.stringify({
+      ok: summary.ok,
+      backend: summary.backend,
+      mode: summary.mode,
+      total: summary.total,
+      okCount: summary.okCount,
+      failedCount: summary.failedCount,
+      output: summary.output,
+    }, null, 2));
   } finally {
     await new Promise((resolvePromise) => server.close(resolvePromise));
   }

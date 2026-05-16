@@ -56,6 +56,6 @@ Current excluded data:
 
 ## GitHub Actions
 
-`.github/workflows/distribution.yml` builds WebGL/WebGPU wasm outputs with Emscripten, creates the distribution archives, and uploads them as workflow artifacts.
+`.github/workflows/distribution.yml` builds WebGL/WebGPU wasm outputs with Emscripten, creates the distribution archives, and uploads the `artifacts` directory as a workflow artifact named `EffekseerForWeb<version>`, matching the EffekseerForWebGL distribution artifact style.
 
 When the workflow runs for a tag starting with `v`, it also creates or updates a GitHub Release and uploads the archive files there.
