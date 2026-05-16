@@ -46,6 +46,13 @@ const defaultCases = [
     effect: "TestData/Effects/10/Sprite_Parameters1.efk",
   },
   {
+    name: "webgpu-three-camera",
+    backend: "webgpu",
+    mode: "external",
+    camera: "three",
+    effect: "TestData/Effects/10/Sprite_Parameters1.efk",
+  },
+  {
     name: "webgpu-texture",
     backend: "webgpu",
     mode: "external",
@@ -355,6 +362,9 @@ async function runCase(browser, origin, testCase, options) {
   url.searchParams.set("mode", testCase.mode);
   url.searchParams.set("effect", `/${options.effect || testCase.effect}`);
   url.searchParams.set("frames", String(options.frames));
+  if (testCase.camera) {
+    url.searchParams.set("camera", testCase.camera);
+  }
 
   const tmpRoot = join(root, ".tmp");
   await mkdir(tmpRoot, { recursive: true });
