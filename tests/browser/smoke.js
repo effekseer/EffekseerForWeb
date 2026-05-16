@@ -15,6 +15,7 @@ const native = params.get("native") || `../../dist/effekseer-${backend}-native.j
 const wasm = params.get("wasm") || `../../dist/effekseer-${backend}-native.wasm`;
 const effectPath = params.get("effect") || "";
 const frames = Number(params.get("frames") || "30");
+const cameraMode = params.get("camera") || "";
 
 function report(payload) {
   result.textContent = JSON.stringify(payload, null, 2);
@@ -84,6 +85,31 @@ function analyzeWebGLPixels(gl, width, height) {
   const pixels = new Uint8Array(width * height * 4);
   gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
   return analyzePixelRows(pixels, width, height, width * 4);
+}
+
+function configureCamera(context, width, height) {
+  if (!cameraMode) {
+    context.setProjectionPerspective(45, width / height, 1, 1000);
+    context.setCameraLookAt(0, 0, 20, 0, 0, 0);
+    return false;
+  }
+
+  if (cameraMode !== "three") {
+    throw new Error(`Unsupported camera mode: ${cameraMode}`);
+  }
+
+  const THREE = window.THREE;
+  if (!THREE || typeof THREE.PerspectiveCamera !== "function") {
+    throw new Error("THREE.PerspectiveCamera is unavailable.");
+  }
+
+  const camera = new THREE.PerspectiveCamera(45, width / height, 1, 1000);
+  camera.position.set(0, 0, 20);
+  camera.lookAt(0, 0, 0);
+  camera.updateProjectionMatrix();
+  camera.updateMatrixWorld();
+  context.setCameraFromThree(camera);
+  return true;
 }
 
 async function analyzeCanvasPixels(sourceCanvas) {
@@ -223,8 +249,7 @@ async function main() {
 
   const effect = await context.loadEffect(effectPath, { redirect: encodeResourceUrl });
   const handle = context.play(effect, 0, 0, 0);
-  context.setProjectionPerspective(45, canvas.width / canvas.height, 1, 1000);
-  context.setCameraLookAt(0, 0, 20, 0, 0, 0);
+  const threeCamera = configureCamera(context, canvas.width, canvas.height);
 
   let pixelStats;
   if (backend === "webgpu" && mode === "external") {
@@ -250,6 +275,8 @@ async function main() {
     ok: true,
     backend,
     mode,
+    camera: cameraMode || "default",
+    threeCamera,
     frames,
     handleExists: handle?.exists ?? false,
     changedPixels: pixelStats?.changedPixels,
