@@ -104,6 +104,7 @@ WebGPU 未対応時は `WebGPUUnavailableError` を投げる。WebGL runtime に
 - `play(effect, x, y, z)`
 - `setProjectionMatrix(matrix)`
 - `setCameraMatrix(matrix)`
+- `setCameraFromThree(camera)`
 - `setSoundVolume(volume)`
 - `resumeSound()`
 - `pauseSound()`

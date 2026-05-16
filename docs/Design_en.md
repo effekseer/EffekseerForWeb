@@ -104,6 +104,7 @@ Representative APIs:
 - `play(effect, x, y, z)`
 - `setProjectionMatrix(matrix)`
 - `setCameraMatrix(matrix)`
+- `setCameraFromThree(camera)`
 - `setSoundVolume(volume)`
 - `resumeSound()`
 - `pauseSound()`

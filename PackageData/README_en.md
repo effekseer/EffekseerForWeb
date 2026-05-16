@@ -77,6 +77,14 @@ Browsers generally cannot load `.wasm` and effect resources correctly from `file
 
 See `Sample/webgl.js` for a complete Three.js render loop. The sample uses the bundled `Sample/three.min.js`.
 
+When you render with a Three.js camera, call `setCameraFromThree(camera)`. The helper calls `camera.updateMatrixWorld()` by default, copies `camera.projectionMatrix.elements` and `camera.matrixWorldInverse.elements` into Effekseer, and works for both WebGL and WebGPU contexts. Pass `{ updateMatrixWorld: false }` if your render loop already updated the camera.
+
+```js
+camera.aspect = canvas.width / canvas.height;
+camera.updateProjectionMatrix();
+context.setCameraFromThree(camera);
+```
+
 ## Minimal WebGPU Usage
 
 ```html

@@ -77,6 +77,14 @@ http://localhost:8000/Sample/webgpu.html
 
 Three.js と組み合わせた完全な描画ループは `Sample/webgl.js` を参照してください。サンプルは同梱の `Sample/three.min.js` を使用します。
 
+Three.js のカメラで描画する場合は、`setCameraFromThree(camera)` を呼び出してください。このヘルパーはデフォルトで `camera.updateMatrixWorld()` を呼び出し、`camera.projectionMatrix.elements` と `camera.matrixWorldInverse.elements` を Effekseer にコピーします。WebGL と WebGPU の両方の context で使えます。描画ループ側ですでにカメラを更新している場合は `{ updateMatrixWorld: false }` を渡してください。
+
+```js
+camera.aspect = canvas.width / canvas.height;
+camera.updateProjectionMatrix();
+context.setCameraFromThree(camera);
+```
+
 ## 最小構成の WebGPU 利用例
 
 ```html

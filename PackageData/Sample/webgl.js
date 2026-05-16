@@ -133,8 +133,7 @@ async function main() {
     effekseer.update(deltaFrames);
     renderer.render(scene, camera);
 
-    effekseer.setProjectionMatrix(camera.projectionMatrix.elements);
-    effekseer.setCameraMatrix(camera.matrixWorldInverse.elements);
+    effekseer.setCameraFromThree(camera);
     effekseer.draw();
 
     renderer.resetState();

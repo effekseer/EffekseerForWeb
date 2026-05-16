@@ -168,6 +168,20 @@ export interface WebGPUExternalRenderPassOptions {
 
 export type ContextOptions = WebGLContextOptions | WebGPUContextOptions;
 
+export interface Matrix4Like {
+  elements: ArrayLike<number>;
+}
+
+export interface ThreeCameraLike {
+  projectionMatrix: Matrix4Like;
+  matrixWorldInverse: Matrix4Like;
+  updateMatrixWorld?: () => void;
+}
+
+export interface ThreeCameraOptions {
+  updateMatrixWorld?: boolean;
+}
+
 export interface EffectLoadOptions {
   scale?: number;
   redirect?: (url: string) => string;
@@ -723,6 +737,14 @@ abstract class BaseEffekseerContext {
 
   setCameraLookAtFromVector(position: { x: number; y: number; z: number }, target: { x: number; y: number; z: number }, up = { x: 0, y: 1, z: 0 }): void {
     this.setCameraLookAt(position.x, position.y, position.z, target.x, target.y, target.z, up.x, up.y, up.z);
+  }
+
+  setCameraFromThree(camera: ThreeCameraLike, options: ThreeCameraOptions = {}): void {
+    if (options.updateMatrixWorld !== false) {
+      camera.updateMatrixWorld?.();
+    }
+    this.setProjectionMatrix(camera.projectionMatrix.elements);
+    this.setCameraMatrix(camera.matrixWorldInverse.elements);
   }
 
   async loadEffect(data: string | ArrayBuffer, scaleOrOptions: number | EffectLoadOptions = 1.0): Promise<EffekseerEffect> {
