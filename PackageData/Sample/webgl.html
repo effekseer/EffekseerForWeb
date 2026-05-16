@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>EffekseerForWeb WebGL Sample</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body class="sample-player">
+    <canvas id="canvas" width="720" height="480"></canvas>
+    <div class="overlay">
+      <a class="back-link" href="./index.html">Samples</a>
+      <div class="controls">
+        <button type="button" data-effect="laser1">Laser 01</button>
+        <button type="button" data-effect="laser2">Laser 02</button>
+        <button type="button" data-effect="laser3">Laser 03</button>
+        <button type="button" data-effect="fireworks">Fireworks</button>
+        <button type="button" data-effect="track">Track</button>
+        <button type="button" id="stop">Stop</button>
+      </div>
+      <div id="status" class="status">Loading WebGL sample...</div>
+    </div>
+    <script src="./three.min.js"></script>
+    <script type="module" src="./webgl.js"></script>
+  </body>
+</html>

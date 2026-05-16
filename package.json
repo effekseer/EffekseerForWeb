@@ -1,0 +1,23 @@
+{
+  "name": "effekseer-for-web",
+  "version": "0.1.0",
+  "description": "Effekseer runtime for WebGL and WebGPU.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "python build.py",
+    "build:ts": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "package:distribution": "python scripts/create_distribution_package.py",
+    "package:distribution:build": "python build.py && python scripts/create_distribution_package.py",
+    "test": "npm run build:ts && node --test tests/*.test.mjs",
+    "test:browser": "npm run build:ts && node tests/browser/run_smoke.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  }
+}

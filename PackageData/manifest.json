@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "include": [
+    {
+      "from": "ResourceData/samples",
+      "to": "Resources",
+      "exclude": [
+        "**/.git/**",
+        "**/*.blend",
+        "**/*.fbx",
+        "**/*.psd"
+      ]
+    },
+    {
+      "from": "PackageData/Sample",
+      "to": "Sample",
+      "exclude": [
+        "**/.git/**",
+        "**/*.blend",
+        "**/*.fbx",
+        "**/*.psd"
+      ]
+    }
+  ]
+}

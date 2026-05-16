@@ -1,3 +1,9 @@
 [submodule "Effekseer"]
 	path = Effekseer
 	url = https://github.com/effekseer/Effekseer
+[submodule "TestData"]
+	path = TestData
+	url = https://github.com/effekseer/TestData
+[submodule "ResourceData"]
+	path = ResourceData
+	url = https://github.com/effekseer/ResourceData.git
