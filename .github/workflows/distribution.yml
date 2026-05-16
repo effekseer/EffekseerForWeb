@@ -63,7 +63,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.package.outputs.artifact_name }}
-          path: artifacts
+          path: .tmp/distribution/${{ steps.package.outputs.artifact_name }}
           if-no-files-found: error
 
       - name: Publish GitHub release assets
