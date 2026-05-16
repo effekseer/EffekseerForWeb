@@ -146,6 +146,23 @@ const effect = await context.loadEffect("./Resources/00_Basic/Laser01.efkefc");
 const handle = context.play(effect, 0, 0, 0);
 ```
 
+既存の EffekseerForWebGL から移行しやすいように、従来の callback 形式も利用できます。この形式でも同じ Promise を返します。
+
+```js
+context.loadEffect(
+  "./Resources/00_Basic/Laser01.efkefc",
+  1.0,
+  (effect) => {
+    context.play(effect, 0, 0, 0);
+  },
+  (error) => {
+    console.error(error);
+  },
+);
+```
+
+`loadEffectPackage(data, Unzip, scale, onload, onerror)` でも同じ互換形式を利用できます。
+
 使い終わったら `release()` を呼び出して、ネイティブ側のリソースを解放してください。
 
 ```js
