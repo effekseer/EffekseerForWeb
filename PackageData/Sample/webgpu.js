@@ -168,8 +168,7 @@ async function main() {
     camera.updateMatrixWorld();
 
     effekseer.update(deltaFrames);
-    effekseer.setProjectionMatrix(camera.projectionMatrix.elements);
-    effekseer.setCameraMatrix(camera.matrixWorldInverse.elements);
+    effekseer.setCameraFromThree(camera);
 
     const encoder = device.createCommandEncoder();
     const pass = encoder.beginRenderPass({

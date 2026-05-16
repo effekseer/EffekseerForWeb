@@ -41,6 +41,10 @@ function createNativeModule(initValue) {
     cwrap(name, returnType) {
       return (...args) => {
         calls.push([name, ...args]);
+        if (name === "EffekseerSetProjectionMatrix" || name === "EffekseerSetCameraMatrix") {
+          const ptr = Number(args[1]);
+          calls.push([`${name}:matrix`, Array.from(module.HEAPF32.slice(ptr >> 2, (ptr >> 2) + 16))]);
+        }
         if (name === "EffekseerInitWebGL" || name === "EffekseerInitWebGPU") {
           return initValue;
         }
@@ -173,4 +177,53 @@ test("WebGPU low-level render pass path imports the external render pass", async
         call[4] === 2,
     ),
   );
+});
+
+test("setCameraFromThree updates and copies Three.js camera matrices", async () => {
+  const native = createNativeModule(404);
+  await initRuntime({
+    backend: "webgl",
+    moduleFactory: async () => native,
+  });
+
+  const context = await createContext({
+    backend: "webgl",
+    graphicsContext: {},
+  });
+
+  const projection = Array.from({ length: 16 }, (_, index) => index + 1);
+  const view = Array.from({ length: 16 }, (_, index) => index + 101);
+  let updateCount = 0;
+
+  context.setCameraFromThree({
+    projectionMatrix: { elements: projection },
+    matrixWorldInverse: { elements: view },
+    updateMatrixWorld() {
+      updateCount++;
+    },
+  });
+
+  assert.equal(updateCount, 1);
+  assert.deepEqual(
+    native.calls.find((call) => call[0] === "EffekseerSetProjectionMatrix:matrix")?.[1],
+    projection,
+  );
+  assert.deepEqual(
+    native.calls.find((call) => call[0] === "EffekseerSetCameraMatrix:matrix")?.[1],
+    view,
+  );
+
+  context.setCameraFromThree(
+    {
+      projectionMatrix: { elements: projection },
+      matrixWorldInverse: { elements: view },
+      updateMatrixWorld() {
+        updateCount++;
+      },
+    },
+    { updateMatrixWorld: false },
+  );
+  assert.equal(updateCount, 1);
+
+  context.release();
 });
