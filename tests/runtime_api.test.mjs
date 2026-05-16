@@ -45,7 +45,7 @@ function createNativeModule(initValue) {
           const ptr = Number(args[1]);
           calls.push([`${name}:matrix`, Array.from(module.HEAPF32.slice(ptr >> 2, (ptr >> 2) + 16))]);
         }
-        if (name === "EffekseerInitWebGL" || name === "EffekseerInitWebGPU") {
+        if (name === "EffekseerInitWebGL" || name === "EffekseerInitWebGPU" || name === "EffekseerLoadEffect") {
           return initValue;
         }
         if (name === "EffekseerBeginWebGPUFrame" || name === "EffekseerDrawToExternalWebGPURenderPass") {
@@ -225,5 +225,34 @@ test("setCameraFromThree updates and copies Three.js camera matrices", async () 
   );
   assert.equal(updateCount, 1);
 
+  context.release();
+});
+
+test("loadEffect supports EffekseerForWebGL-style callbacks", async () => {
+  const native = createNativeModule(505);
+  await initRuntime({
+    backend: "webgl",
+    moduleFactory: async () => native,
+  });
+
+  const context = await createContext({
+    backend: "webgl",
+    graphicsContext: {},
+  });
+
+  let callbackEffect;
+  const effect = await context.loadEffect(
+    new ArrayBuffer(8),
+    2.0,
+    (loaded) => {
+      callbackEffect = loaded;
+    },
+  );
+
+  assert.equal(effect.nativePtr, 505);
+  assert.equal(callbackEffect, effect);
+  assert.ok(native.calls.some((call) => call[0] === "EffekseerLoadEffect" && call[4] === 2.0));
+
+  effect.release();
   context.release();
 });
