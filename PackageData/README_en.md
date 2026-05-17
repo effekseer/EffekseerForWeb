@@ -146,6 +146,23 @@ const effect = await context.loadEffect("./Resources/00_Basic/Laser01.efkefc");
 const handle = context.play(effect, 0, 0, 0);
 ```
 
+For easier migration from EffekseerForWebGL, the loader also accepts the callback form used by the older package while still returning the same Promise.
+
+```js
+context.loadEffect(
+  "./Resources/00_Basic/Laser01.efkefc",
+  1.0,
+  (effect) => {
+    context.play(effect, 0, 0, 0);
+  },
+  (error) => {
+    console.error(error);
+  },
+);
+```
+
+The same compatibility form is available for `loadEffectPackage(data, Unzip, scale, onload, onerror)`.
+
 Release native resources when they are no longer needed.
 
 ```js

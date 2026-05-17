@@ -101,6 +101,7 @@ Representative APIs:
 - `draw()`
 - `loadEffect(data, options)`
 - `loadEffectPackage(data, Unzip, options)`
+- EffekseerForWebGL-style `loadEffect(data, scale, onload, onerror, redirect)` and `loadEffectPackage(data, Unzip, scale, onload, onerror)` compatibility forms
 - `play(effect, x, y, z)`
 - `setProjectionMatrix(matrix)`
 - `setCameraMatrix(matrix)`

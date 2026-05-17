@@ -188,6 +188,9 @@ export interface EffectLoadOptions {
   resourceLoader?: ResourceLoader;
 }
 
+export type EffectLoadCallback = (effect: EffekseerEffect) => void;
+export type EffectLoadErrorCallback = (error: unknown) => void;
+
 export type ResourceType = "binary" | "image" | "sound" | "material";
 
 export type ResourceLoader = (
@@ -747,9 +750,41 @@ abstract class BaseEffekseerContext {
     this.setCameraMatrix(camera.matrixWorldInverse.elements);
   }
 
-  async loadEffect(data: string | ArrayBuffer, scaleOrOptions: number | EffectLoadOptions = 1.0): Promise<EffekseerEffect> {
+  loadEffect(
+    data: string | ArrayBuffer,
+    scaleOrOptions?: number | EffectLoadOptions,
+    onload?: EffectLoadCallback,
+    onerror?: EffectLoadErrorCallback,
+    redirect?: (url: string) => string,
+  ): Promise<EffekseerEffect> {
     this.assertAlive();
+    const options = typeof scaleOrOptions === "number"
+      ? { scale: scaleOrOptions, redirect }
+      : (scaleOrOptions ?? {});
+
+    const promise = this.loadEffectAsync(data, options);
+    if (onload || onerror) {
+      promise.then((effect) => onload?.(effect), (error: unknown) => onerror?.(error));
+    }
+    return promise;
+  }
+
+  loadEffectPackage(
+    data: string | ArrayBuffer,
+    Unzip: UnzipConstructor | UnzipLike,
+    scaleOrOptions: number | EffectLoadOptions = 1.0,
+    onload?: EffectLoadCallback,
+    onerror?: EffectLoadErrorCallback,
+  ): Promise<EffekseerEffect> {
     const options = typeof scaleOrOptions === "number" ? { scale: scaleOrOptions } : scaleOrOptions;
+    const promise = this.loadEffectPackageAsync(data, Unzip, options);
+    if (onload || onerror) {
+      promise.then((effect) => onload?.(effect), (error: unknown) => onerror?.(error));
+    }
+    return promise;
+  }
+
+  private async loadEffectAsync(data: string | ArrayBuffer, options: EffectLoadOptions): Promise<EffekseerEffect> {
     const effect = new EffekseerEffect(this, options);
     if (typeof data === "string") {
       effect.baseDir = data.includes("/") ? data.slice(0, data.lastIndexOf("/") + 1) : "";
@@ -760,8 +795,7 @@ abstract class BaseEffekseerContext {
     return effect;
   }
 
-  async loadEffectPackage(data: string | ArrayBuffer, Unzip: UnzipConstructor | UnzipLike, scaleOrOptions: number | EffectLoadOptions = 1.0): Promise<EffekseerEffect> {
-    const options = typeof scaleOrOptions === "number" ? { scale: scaleOrOptions } : scaleOrOptions;
+  private async loadEffectPackageAsync(data: string | ArrayBuffer, Unzip: UnzipConstructor | UnzipLike, options: EffectLoadOptions): Promise<EffekseerEffect> {
     const buffer = typeof data === "string" ? await fetchArrayBuffer(data) : data;
     const unzip = typeof Unzip === "function" ? new Unzip(new Uint8Array(buffer)) : Unzip;
     const meta = JSON.parse(new TextDecoder().decode(unzip.decompress("metafile.json"))) as {
