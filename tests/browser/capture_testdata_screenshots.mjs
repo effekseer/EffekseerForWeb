@@ -8,6 +8,60 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const renderableExtensions = new Set([".efk", ".efkefc"]);
+const targetPresets = {
+  "effekseer-for-webgl": [
+    { effect: "TestData/Effects/10/SimpleLaser.efk", frames: 30 },
+    { effect: "TestData/Effects/10/FCurve_Parameters1.efk", frames: 30 },
+    { effect: "TestData/Effects/10/Ribbon_Parameters1.efk", frames: 30 },
+    { effect: "TestData/Effects/10/Ring_Parameters1.efk", frames: 30 },
+    { effect: "TestData/Effects/10/Track_Parameters1.efk", frames: 30 },
+    { effect: "TestData/Effects/10/Sprite_Parameters1.efk", frames: 30 },
+    { effect: "TestData/Effects/10/Distortions1.efk", frames: 30 },
+    { effect: "TestData/Effects/10/Parents1.efk", frames: 30 },
+    { effect: "TestData/Effects/14/Model_Parameters1.efk", frames: 30 },
+    { effect: "TestData/Effects/15/Lighing_Parameters1.efkefc", frames: 30 },
+    { effect: "TestData/Effects/15/DynamicParameter1.efkefc", frames: 30 },
+    { effect: "TestData/Effects/15/Material_Sampler1.efkefc", frames: 30 },
+    { effect: "TestData/Effects/15/Material_Refraction.efkefc", frames: 30 },
+    { effect: "TestData/Effects/15/Material_WorldPositionOffset.efkefc", frames: 30 },
+    { effect: "TestData/Effects/15/BasicRenderSettings_Blend.efkefc", frames: 30 },
+    { effect: "TestData/Effects/15/BasicRenderSettings_Inherit_Color.efkefc", frames: 30 },
+    { effect: "TestData/Effects/15/ForceFieldLocal_Turbulence1.efkefc", frames: 30 },
+    { effect: "TestData/Effects/15/ForceFieldLocal_Old.efkefc", frames: 30 },
+    { effect: "TestData/Effects/15/Material_FresnelRotatorPolarCoords.efkefc", frames: 30 },
+    { effect: "TestData/Effects/15/Update_Easing.efkefc", frames: 30 },
+    { effect: "TestData/Effects/15/Update_MultiModel.efkefc", frames: 30 },
+    { effect: "TestData/Effects/15/Material_UV1.efkefc", frames: 30 },
+    { effect: "TestData/Effects/15/Material_UV2.efkefc", frames: 30 },
+    { effect: "TestData/Effects/15/SpawnMethodParameter1.efkefc", frames: 30 },
+    { effect: "TestData/Effects/15/Material_CustomData1.efkefc", frames: 30 },
+    { effect: "TestData/Effects/15/Material_CustomDataMax.efkefc", frames: 30 },
+    { effect: "TestData/Effects/16/DrawWithoutInstancing.efkefc", frames: 30 },
+    { effect: "TestData/Effects/16/AlphaBlendTexture01.efkefc", frames: 30 },
+    { effect: "TestData/Effects/16/AlphaCutoffEdgeColor01.efkefc", frames: 30 },
+    { effect: "TestData/Effects/16/BasicRenderSettings_Emissive.efkefc", frames: 30 },
+    { effect: "TestData/Effects/16/Curve01.efkefc", frames: 30 },
+    { effect: "TestData/Effects/16/EdgeFallOff01.efkefc", frames: 30 },
+    { effect: "TestData/Effects/16/Flip01.efkefc", frames: 30 },
+    { effect: "TestData/Effects/16/Flip_UV_01.efkefc", frames: 30 },
+    { effect: "TestData/Effects/16/ForceFieldLocal02.efkefc", frames: 30 },
+    { effect: "TestData/Effects/16/ForceFieldLocal03.efkefc", frames: 30 },
+    { effect: "TestData/Effects/16/Material_EffectScale.efkefc", frames: 30 },
+    { effect: "TestData/Effects/16/ProcedualModel01.efkefc", frames: 30 },
+    { effect: "TestData/Effects/16/ProcedualModel02.efkefc", frames: 30 },
+    { effect: "TestData/Effects/16/ProcedualModel03.efkefc", frames: 30 },
+    { effect: "TestData/Effects/16/AlphaCutoffParameter01.efkefc", frames: 30 },
+    { effect: "TestData/Effects/16/RotateScale01.efkefc", frames: 30 },
+    { effect: "TestData/Effects/16/FollowParent01.efkefc", frames: 30 },
+    { effect: "TestData/Effects/16/SoftParticle01.efkefc", frames: 30 },
+    { effect: "TestData/Effects/17/Flip_UV_02.efkefc", frames: 57 },
+    { effect: "TestData/Effects/17/Gradient1.efkefc", frames: 60 },
+    { effect: "TestData/Effects/17/KillRules01.efkefc", frames: 60 },
+    { effect: "TestData/Effects/17/Light1.efkefc", frames: 60 },
+    { effect: "TestData/Effects/17/LocalTime.efkefc", frames: 60 },
+    { effect: "TestData/Effects/17/Noise1.efkefc", frames: 60 },
+  ],
+};
 
 function timestamp() {
   const now = new Date();
@@ -30,6 +84,7 @@ function parseArgs(argv) {
     timeout: 45000,
     input: "TestData",
     out: "",
+    preset: "",
     continueOnError: true,
   };
 
@@ -52,6 +107,8 @@ function parseArgs(argv) {
       options.input = next();
     } else if (arg === "--out") {
       options.out = next();
+    } else if (arg === "--preset") {
+      options.preset = next();
     } else if (arg === "--fail-fast") {
       options.continueOnError = false;
     } else {
@@ -67,6 +124,18 @@ function parseArgs(argv) {
   }
 
   return options;
+}
+
+function resolvePresetTargets(name) {
+  const preset = targetPresets[name];
+  if (!preset) {
+    throw new Error(`Unknown target preset: ${name}. Available presets: ${Object.keys(targetPresets).join(", ")}`);
+  }
+
+  return preset.map((target) => ({
+    path: resolve(root, target.effect),
+    frames: target.frames,
+  }));
 }
 
 function findBrowser(explicitPath) {
@@ -389,7 +458,7 @@ function makeIndexHtml(summary) {
     return `<article class="${status}">
       ${image}
       <h2>${htmlEscape(result.effect)}</h2>
-      <p>${htmlEscape(status)} / ${htmlEscape(stats)}</p>
+      <p>${htmlEscape(status)} / frames=${result.frames ?? summary.frames} / ${htmlEscape(stats)}</p>
       ${result.message ? `<pre>${htmlEscape(result.message)}</pre>` : ""}
     </article>`;
   }).join("\n");
@@ -418,7 +487,7 @@ function makeIndexHtml(summary) {
 <body>
   <header>
     <h1>Effekseer TestData Screenshots</h1>
-    <div class="meta">backend=${htmlEscape(summary.backend)}, mode=${htmlEscape(summary.mode)}, frames=${summary.frames}, total=${summary.total}, ok=${summary.okCount}, failed=${summary.failedCount}</div>
+    <div class="meta">backend=${htmlEscape(summary.backend)}, mode=${htmlEscape(summary.mode)}, preset=${htmlEscape(summary.preset || "custom")}, defaultFrames=${summary.frames}, total=${summary.total}, ok=${summary.okCount}, failed=${summary.failedCount}</div>
   </header>
   <main>
     ${cards}
@@ -427,7 +496,7 @@ function makeIndexHtml(summary) {
 </html>`;
 }
 
-async function runCapture(browser, origin, effects, options, outDir) {
+async function runCapture(browser, origin, targets, options, outDir) {
   const testCase = { backend: options.backend };
   const tmpRoot = join(root, ".tmp");
   await mkdir(tmpRoot, { recursive: true });
@@ -453,17 +522,19 @@ async function runCapture(browser, origin, effects, options, outDir) {
     await client.send("Page.enable");
 
     const results = [];
-    for (let i = 0; i < effects.length; i++) {
-      const effect = effects[i];
-      const effectPath = relative(root, effect).replace(/\\/g, "/");
+    for (let i = 0; i < targets.length; i++) {
+      const target = targets[i];
+      const effectPath = relative(root, target.path).replace(/\\/g, "/");
+      const frameCount = target.frames ?? options.frames;
       const url = new URL("/tests/browser/smoke.html", origin);
       url.searchParams.set("backend", options.backend);
       url.searchParams.set("mode", options.mode);
       url.searchParams.set("effect", `/${effectPath}`);
-      url.searchParams.set("frames", String(options.frames));
+      url.searchParams.set("frames", String(frameCount));
 
       const result = {
         effect: effectPath,
+        frames: frameCount,
         ok: false,
         screenshot: "",
         pixelStats: null,
@@ -498,7 +569,7 @@ async function runCapture(browser, origin, effects, options, outDir) {
       }
 
       results.push(result);
-      console.log(`[${i + 1}/${effects.length}] ${result.ok ? "ok" : "failed"} ${effectPath}`);
+      console.log(`[${i + 1}/${targets.length}] ${result.ok ? "ok" : "failed"} ${effectPath}`);
     }
 
     return { results, stderr };
@@ -515,8 +586,10 @@ async function main() {
   const outDir = resolve(root, options.out || join("artifacts", "testdata-screenshots", `${options.backend}-${timestamp()}`));
   await mkdir(outDir, { recursive: true });
 
-  const effects = await collectEffects(inputDir);
-  if (effects.length === 0) {
+  const targets = options.preset
+    ? resolvePresetTargets(options.preset)
+    : (await collectEffects(inputDir)).map((path) => ({ path, frames: options.frames }));
+  if (targets.length === 0) {
     throw new Error(`No .efk or .efkefc files found under ${inputDir}`);
   }
 
@@ -526,18 +599,19 @@ async function main() {
   const origin = `http://127.0.0.1:${address.port}`;
 
   try {
-    const { results, stderr } = await runCapture(browser, origin, effects, options, outDir);
+    const { results, stderr } = await runCapture(browser, origin, targets, options, outDir);
     const okCount = results.filter((result) => result.ok).length;
     const summary = {
-      ok: okCount === results.length,
+      ok: okCount === targets.length,
       backend: options.backend,
       mode: options.mode,
       frames: options.frames,
-      input: relative(root, inputDir).replace(/\\/g, "/"),
+      input: options.preset || relative(root, inputDir).replace(/\\/g, "/"),
+      preset: options.preset,
       output: relative(root, outDir).replace(/\\/g, "/"),
-      total: results.length,
+      total: targets.length,
       okCount,
-      failedCount: results.length - okCount,
+      failedCount: targets.length - okCount,
       browser,
       stderr,
       results,
@@ -553,6 +627,9 @@ async function main() {
       failedCount: summary.failedCount,
       output: summary.output,
     }, null, 2));
+    if (!summary.ok) {
+      process.exitCode = 1;
+    }
   } finally {
     await new Promise((resolvePromise) => server.close(resolvePromise));
   }

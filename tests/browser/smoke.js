@@ -16,6 +16,9 @@ const wasm = params.get("wasm") || `../../dist/effekseer-${backend}-native.wasm`
 const effectPath = params.get("effect") || "";
 const frames = Number(params.get("frames") || "30");
 const cameraMode = params.get("camera") || "";
+const cameraPosition = { x: 20, y: 20, z: 20 };
+const cameraTarget = { x: 0, y: 0, z: 0 };
+const cameraFov = 30;
 
 function report(payload) {
   result.textContent = JSON.stringify(payload, null, 2);
@@ -90,8 +93,15 @@ function analyzeWebGLPixels(gl, width, height) {
 
 function configureCamera(context, width, height) {
   if (!cameraMode) {
-    context.setProjectionPerspective(45, width / height, 1, 1000);
-    context.setCameraLookAt(0, 0, 20, 0, 0, 0);
+    context.setProjectionPerspective(cameraFov, width / height, 1, 1000);
+    context.setCameraLookAt(
+      cameraPosition.x,
+      cameraPosition.y,
+      cameraPosition.z,
+      cameraTarget.x,
+      cameraTarget.y,
+      cameraTarget.z,
+    );
     return false;
   }
 
@@ -104,9 +114,9 @@ function configureCamera(context, width, height) {
     throw new Error("THREE.PerspectiveCamera is unavailable.");
   }
 
-  const camera = new THREE.PerspectiveCamera(45, width / height, 1, 1000);
-  camera.position.set(0, 0, 20);
-  camera.lookAt(0, 0, 0);
+  const camera = new THREE.PerspectiveCamera(cameraFov, width / height, 1, 1000);
+  camera.position.set(cameraPosition.x, cameraPosition.y, cameraPosition.z);
+  camera.lookAt(cameraTarget.x, cameraTarget.y, cameraTarget.z);
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
   context.setCameraFromThree(camera);

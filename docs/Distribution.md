@@ -110,7 +110,7 @@ CI captures screenshots with:
 npm run test:screenshots:ci
 ```
 
-The CI command renders the WebGL samples under `TestData/Effects/10` and writes them to `test-results/testdata-screenshots/webgl-ci`, which is uploaded as the `browser-test-screenshots` workflow artifact.
+The CI command renders the WebGL samples from the `effekseer-for-webgl` preset, which follows EffekseerForWebGL's browser-compatible runtime screenshot coverage for `TestData/Effects`. It writes them to `test-results/testdata-screenshots/webgl-ci`, which is uploaded as the `browser-test-screenshots` workflow artifact.
 
 For a broader local capture, run:
 
