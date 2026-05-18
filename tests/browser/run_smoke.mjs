@@ -346,17 +346,19 @@ async function stopBrowser(child) {
 }
 
 async function removeProfileDir(userDataDir) {
-  for (let i = 0; i < 5; i++) {
+  let lastError;
+  for (let i = 0; i < 20; i++) {
     try {
       await rm(userDataDir, { recursive: true, force: true });
       return;
     } catch (error) {
-      if (i === 4) {
-        throw error;
-      }
+      lastError = error;
       await delay(250);
     }
   }
+
+  const message = lastError instanceof Error ? lastError.message : String(lastError);
+  console.warn(`Warning: failed to remove browser profile ${userDataDir}: ${message}`);
 }
 
 async function runCase(browser, origin, testCase, options) {

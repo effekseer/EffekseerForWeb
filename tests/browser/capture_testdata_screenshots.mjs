@@ -72,6 +72,14 @@ function parseArgs(argv) {
 function findBrowser(explicitPath) {
   const candidates = [
     explicitPath,
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+    "/usr/bin/google-chrome",
+    "/usr/bin/google-chrome-stable",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+    "/usr/bin/microsoft-edge",
+    "/usr/bin/microsoft-edge-stable",
     "C:/Program Files/Google/Chrome/Application/chrome.exe",
     "C:/Program Files (x86)/Google/Chrome/Application/chrome.exe",
     "C:/Program Files/Microsoft/Edge/Application/msedge.exe",
@@ -324,17 +332,19 @@ async function stopBrowser(child) {
 }
 
 async function removeProfileDir(userDataDir) {
-  for (let i = 0; i < 5; i++) {
+  let lastError;
+  for (let i = 0; i < 20; i++) {
     try {
       await rm(userDataDir, { recursive: true, force: true });
       return;
     } catch (error) {
-      if (i === 4) {
-        throw error;
-      }
+      lastError = error;
       await delay(250);
     }
   }
+
+  const message = lastError instanceof Error ? lastError.message : String(lastError);
+  console.warn(`Warning: failed to remove browser profile ${userDataDir}: ${message}`);
 }
 
 async function collectEffects(dir) {

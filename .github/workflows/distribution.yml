@@ -51,6 +51,7 @@ jobs:
         run: npm test
 
       - name: Build native WebGL/WebGPU outputs
+        id: build_native
         shell: bash
         run: |
           source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
@@ -60,6 +61,18 @@ jobs:
         env:
           EFK_ALLOW_WEBGPU_SKIP: "1"
         run: npm run test:browser:ci
+
+      - name: Capture browser test screenshots
+        if: ${{ !cancelled() && steps.build_native.outcome == 'success' }}
+        run: npm run test:screenshots:ci
+
+      - name: Upload browser test screenshots
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-test-screenshots
+          path: test-results/testdata-screenshots
+          if-no-files-found: warn
 
       - name: Create distribution archives
         run: npm run package:distribution

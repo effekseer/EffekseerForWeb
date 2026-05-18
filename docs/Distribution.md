@@ -56,7 +56,9 @@ Current excluded data:
 
 ## GitHub Actions
 
-`.github/workflows/distribution.yml` builds WebGL/WebGPU wasm outputs with Emscripten, runs browser smoke tests, creates the distribution archives, and uploads the staged pre-archive distribution directory as a workflow artifact named `EffekseerForWeb<version>`, matching the EffekseerForWebGL distribution artifact style. GitHub Actions compresses that uploaded directory into the downloadable artifact zip.
+`.github/workflows/distribution.yml` builds WebGL/WebGPU wasm outputs with Emscripten, runs browser smoke tests, captures browser-rendered WebGL screenshots, creates the distribution archives, and uploads the staged pre-archive distribution directory as a workflow artifact named `EffekseerForWeb<version>`, matching the EffekseerForWebGL distribution artifact style. GitHub Actions compresses that uploaded directory into the downloadable artifact zip.
+
+The workflow also uploads a `browser-test-screenshots` artifact. It contains PNG captures, `summary.json`, and `index.html` for quick visual inspection of the rendered TestData samples.
 
 When the workflow runs for a tag starting with `v`, it also creates or updates a GitHub Release and uploads the archive files there.
 
@@ -99,3 +101,21 @@ npm run test:browser:ci
 ```
 
 Audio playback is not included in the CI browser smoke suite yet because the current test data does not include an effect with configured sound assets.
+
+## Browser Screenshots
+
+CI captures screenshots with:
+
+```sh
+npm run test:screenshots:ci
+```
+
+The CI command renders the WebGL samples under `TestData/Effects/10` and writes them to `test-results/testdata-screenshots/webgl-ci`, which is uploaded as the `browser-test-screenshots` workflow artifact.
+
+For a broader local capture, run:
+
+```sh
+npm run test:screenshots
+```
+
+By default, local captures are written under `artifacts/testdata-screenshots/`.
