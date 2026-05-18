@@ -56,6 +56,46 @@ Current excluded data:
 
 ## GitHub Actions
 
-`.github/workflows/distribution.yml` builds WebGL/WebGPU wasm outputs with Emscripten, creates the distribution archives, and uploads the staged pre-archive distribution directory as a workflow artifact named `EffekseerForWeb<version>`, matching the EffekseerForWebGL distribution artifact style. GitHub Actions compresses that uploaded directory into the downloadable artifact zip.
+`.github/workflows/distribution.yml` builds WebGL/WebGPU wasm outputs with Emscripten, runs browser smoke tests, creates the distribution archives, and uploads the staged pre-archive distribution directory as a workflow artifact named `EffekseerForWeb<version>`, matching the EffekseerForWebGL distribution artifact style. GitHub Actions compresses that uploaded directory into the downloadable artifact zip.
 
 When the workflow runs for a tag starting with `v`, it also creates or updates a GitHub Release and uploads the archive files there.
+
+## Browser Smoke Tests
+
+CI runs:
+
+```sh
+npm run test:browser:ci
+```
+
+The CI suite covers:
+
+- `webgl-basic`
+- `webgl-material`
+- `webgpu-canvas`
+- `webgpu-external`
+- `webgpu-texture`
+
+WebGL cases are required. WebGPU cases use `--allow-webgpu-skip` in CI, so they are skipped only when WebGPU is unavailable in the browser environment. If WebGPU is available, rendering pixel stats and validation error checks are required.
+
+When Chrome or Edge is not installed at a standard path, pass the browser path explicitly:
+
+```sh
+npm run test:browser -- --browser "C:\Program Files\Google\Chrome\Application\chrome.exe"
+```
+
+Or set `CHROME_BIN` / `EDGE_BIN`:
+
+```sh
+set "CHROME_BIN=C:\Program Files\Google\Chrome\Application\chrome.exe"
+npm run test:browser:ci
+```
+
+PowerShell example:
+
+```powershell
+$env:CHROME_BIN = "C:\Program Files\Google\Chrome\Application\chrome.exe"
+npm run test:browser:ci
+```
+
+Audio playback is not included in the CI browser smoke suite yet because the current test data does not include an effect with configured sound assets.

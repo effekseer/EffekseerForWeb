@@ -79,9 +79,10 @@ export class InvalidOperationError extends EffekseerError {}
 
 type NativeValueType = "number" | "void" | "string";
 type NativeArgType = "number" | "string";
+type NativeCwrapOptions = { async?: boolean };
 
 export interface NativeModule {
-  cwrap(name: string, returnType: NativeValueType, argTypes: NativeArgType[]): (...args: number[]) => number | void;
+  cwrap(name: string, returnType: NativeValueType, argTypes: NativeArgType[], options?: NativeCwrapOptions): (...args: number[]) => number | void | Promise<number | void>;
   _malloc(size: number): number;
   _free(ptr: number): void;
   HEAP8?: Int8Array;
@@ -166,6 +167,13 @@ export interface WebGPUExternalRenderPassOptions {
   depthFormat?: GPUTextureFormat;
 }
 
+export interface WebGPUFrameBufferReadback {
+  data: Uint8Array;
+  width: number;
+  height: number;
+  bytesPerRow: number;
+}
+
 export type ContextOptions = WebGLContextOptions | WebGPUContextOptions;
 
 export interface Matrix4Like {
@@ -221,6 +229,7 @@ interface NativeCore {
   DrawWebGPUFrame(context: number): void;
   EndWebGPURenderPass(context: number): void;
   SubmitWebGPUFrame(context: number): void;
+  ReadWebGPUFrameBuffer(context: number, data: number, size: number): Promise<number>;
   ResizeWebGPU(context: number, width: number, height: number): number;
   DrawToExternalWebGPURenderPass(context: number, renderPassEncoder: number, colorFormat: number, depthFormat: number): number;
   ReleaseImportedWebGPURenderPassEncoder(renderPassEncoder: number): void;
@@ -295,6 +304,10 @@ function cwrapVoid(module: NativeModule, name: string, args: NativeArgType[]): (
   return module.cwrap(name, "void", args) as (...args: number[]) => void;
 }
 
+function cwrapNumberAsync(module: NativeModule, name: string, args: NativeArgType[]): (...args: number[]) => Promise<number> {
+  return module.cwrap(name, "number", args, { async: true }) as (...args: number[]) => Promise<number>;
+}
+
 function bindCore(module: NativeModule): NativeCore {
   return {
     InitWebGL: cwrapNumber(module, "EffekseerInitWebGL", ["number", "number", "number", "number"]),
@@ -312,6 +325,7 @@ function bindCore(module: NativeModule): NativeCore {
     DrawWebGPUFrame: cwrapVoid(module, "EffekseerDrawWebGPUFrame", ["number"]),
     EndWebGPURenderPass: cwrapVoid(module, "EffekseerEndWebGPURenderPass", ["number"]),
     SubmitWebGPUFrame: cwrapVoid(module, "EffekseerSubmitWebGPUFrame", ["number"]),
+    ReadWebGPUFrameBuffer: cwrapNumberAsync(module, "EffekseerReadWebGPUFrameBuffer", ["number", "number", "number"]),
     ResizeWebGPU: cwrapNumber(module, "EffekseerResizeWebGPU", ["number", "number", "number"]),
     DrawToExternalWebGPURenderPass: cwrapNumber(module, "EffekseerDrawToExternalWebGPURenderPass", ["number", "number", "number", "number"]),
     ReleaseImportedWebGPURenderPassEncoder: cwrapVoid(module, "EffekseerReleaseImportedWebGPURenderPassEncoder", ["number"]),
@@ -971,6 +985,8 @@ export class WebGPUEffekseerContext extends BaseEffekseerContext {
   private renderPassActive = false;
   private colorFormat: GPUTextureFormat;
   private depthFormat: GPUTextureFormat | undefined;
+  private width: number;
+  private height: number;
 
   constructor(runtime: EffekseerRuntime, options: WebGPUContextOptions) {
     const canvas = options.canvas ?? options.canvasContext?.canvas;
@@ -989,6 +1005,8 @@ export class WebGPUEffekseerContext extends BaseEffekseerContext {
     this.canvasContext = options.canvasContext;
     this.colorFormat = colorFormat;
     this.depthFormat = options.depthFormat;
+    this.width = width;
+    this.height = height;
   }
 
   configureSurface(options: { width?: number; height?: number; colorFormat?: GPUTextureFormat; depthFormat?: GPUTextureFormat; alphaMode?: GPUCanvasAlphaMode } = {}): void {
@@ -1011,6 +1029,12 @@ export class WebGPUEffekseerContext extends BaseEffekseerContext {
     const height = options.height ?? (this.canvasContext?.canvas && "height" in this.canvasContext.canvas ? Number(this.canvasContext.canvas.height) : undefined);
     if (width !== undefined && height !== undefined && this.runtime.core.ResizeWebGPU(this.nativePtr, width, height) === 0) {
       throw new NativeInitializationError("Failed to resize the native WebGPU surface.");
+    }
+    if (width !== undefined) {
+      this.width = width;
+    }
+    if (height !== undefined) {
+      this.height = height;
     }
   }
 
@@ -1072,6 +1096,37 @@ export class WebGPUEffekseerContext extends BaseEffekseerContext {
       if (!consumed) {
         this.runtime.core.ReleaseImportedWebGPURenderPassEncoder(nativeRenderPass);
       }
+    }
+  }
+
+  async readFrameBuffer(): Promise<WebGPUFrameBufferReadback> {
+    this.assertAlive();
+    if (this.frameActive) {
+      throw new InvalidOperationError("readFrameBuffer cannot run while a native WebGPU frame is active.");
+    }
+    if (!this.runtime.module.HEAPU8) {
+      throw new NativeInitializationError("The native module did not expose HEAPU8.");
+    }
+
+    const bytesPerRow = this.width * 4;
+    const byteLength = bytesPerRow * this.height;
+    const dataPtr = this.runtime.module._malloc(byteLength);
+    try {
+      const written = await this.runtime.core.ReadWebGPUFrameBuffer(this.nativePtr, dataPtr, byteLength);
+      if (written <= 0) {
+        throw new NativeInitializationError("Failed to read the native WebGPU frame buffer.");
+      }
+      if (written > byteLength) {
+        throw new NativeInitializationError(`Native WebGPU frame buffer readback requires ${written} bytes, but ${byteLength} bytes were allocated.`);
+      }
+      return {
+        data: this.runtime.module.HEAPU8.slice(dataPtr, dataPtr + written),
+        width: this.width,
+        height: this.height,
+        bytesPerRow,
+      };
+    } finally {
+      this.runtime.module._free(dataPtr);
     }
   }
 

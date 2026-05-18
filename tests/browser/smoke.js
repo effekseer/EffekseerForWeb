@@ -39,7 +39,7 @@ function encodeResourceUrl(url) {
   return prefix + segments.join("/");
 }
 
-function analyzePixelRows(pixels, width, height, bytesPerRow) {
+function analyzePixelRows(pixels, width, height, bytesPerRow, options = {}) {
   let changedPixels = 0;
   let whiteLikePixels = 0;
   let redTotal = 0;
@@ -54,7 +54,8 @@ function analyzePixelRows(pixels, width, height, bytesPerRow) {
       const g = pixels[i + 1];
       const b = pixels[i + 2];
       const a = pixels[i + 3];
-      if (r !== 0 || g !== 0 || b !== 0 || a !== 0) {
+      const changed = options.ignoreAlpha ? r !== 0 || g !== 0 || b !== 0 : r !== 0 || g !== 0 || b !== 0 || a !== 0;
+      if (changed) {
         changedPixels++;
         redTotal += r;
         greenTotal += g;
@@ -252,11 +253,13 @@ async function main() {
   const threeCamera = configureCamera(context, canvas.width, canvas.height);
 
   let pixelStats;
+  let readback = "";
   if (backend === "webgpu" && mode === "external") {
     if (!webgpuDevice) {
       throw new Error("WebGPU device is not available.");
     }
     pixelStats = await drawAndAnalyzeWebGPUExternalFrames(context, webgpuDevice, colorFormat, depthFormat, canvas.width, canvas.height, frames);
+    readback = "external-render-pass";
   } else {
     for (let i = 0; i < frames; i++) {
       context.update(1);
@@ -265,9 +268,15 @@ async function main() {
     }
     if (gl) {
       pixelStats = analyzeWebGLPixels(gl, canvas.width, canvas.height);
+      readback = "webgl-readPixels";
+    } else if (typeof context.readFrameBuffer === "function") {
+      const frameBuffer = await context.readFrameBuffer();
+      pixelStats = analyzePixelRows(frameBuffer.data, frameBuffer.width, frameBuffer.height, frameBuffer.bytesPerRow, { ignoreAlpha: true });
+      readback = "webgpu-native-framebuffer";
     } else {
       const canvasStats = await analyzeCanvasPixels(canvas);
       pixelStats = canvasStats && canvasStats.changedPixels > 0 ? canvasStats : undefined;
+      readback = pixelStats ? "canvas-image-bitmap" : "";
     }
   }
 
@@ -280,6 +289,7 @@ async function main() {
     frames,
     handleExists: handle?.exists ?? false,
     changedPixels: pixelStats?.changedPixels,
+    readback,
     pixelStats,
     webgpuError: getLastWebGPUError(),
     webgpuErrors: getWebGPUErrors(),

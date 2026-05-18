@@ -56,6 +56,11 @@ jobs:
           source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
           python build.py
 
+      - name: Browser smoke tests
+        env:
+          EFK_ALLOW_WEBGPU_SKIP: "1"
+        run: npm run test:browser:ci
+
       - name: Create distribution archives
         run: npm run package:distribution
 

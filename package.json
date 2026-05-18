@@ -15,7 +15,8 @@
     "package:distribution": "python scripts/create_distribution_package.py",
     "package:distribution:build": "python build.py && python scripts/create_distribution_package.py",
     "test": "npm run build:ts && node --test tests/*.test.mjs",
-    "test:browser": "npm run build:ts && node tests/browser/run_smoke.mjs"
+    "test:browser": "npm run build:ts && node tests/browser/run_smoke.mjs",
+    "test:browser:ci": "npm run build:ts && node tests/browser/run_smoke.mjs --case webgl-basic --case webgl-material --case webgpu-canvas --case webgpu-external --case webgpu-texture --allow-webgpu-skip"
   },
   "devDependencies": {
     "typescript": "^5.5.0"

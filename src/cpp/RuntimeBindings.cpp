@@ -138,6 +138,18 @@ extern "C"
 #endif
 	}
 
+	int EXPORT EffekseerReadWebGPUFrameBuffer(Context* context, void* destination, int destinationSize)
+	{
+#if defined(EFFEKSEER_FOR_WEB_WEBGPU)
+		return context != nullptr ? context->ReadWebGPUFrameBuffer(static_cast<uint8_t*>(destination), destinationSize) : 0;
+#else
+		(void)context;
+		(void)destination;
+		(void)destinationSize;
+		return 0;
+#endif
+	}
+
 	int EXPORT EffekseerResizeWebGPU(Context* context, int width, int height)
 	{
 #if defined(EFFEKSEER_FOR_WEB_WEBGPU)

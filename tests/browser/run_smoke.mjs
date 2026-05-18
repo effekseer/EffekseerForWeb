@@ -38,6 +38,8 @@ const defaultCases = [
     backend: "webgpu",
     mode: "canvas",
     effect: "TestData/Effects/10/Sprite_Parameters1.efk",
+    requirePixelStats: true,
+    minColorBuckets: 8,
   },
   {
     name: "webgpu-external",
@@ -67,6 +69,7 @@ const defaultCases = [
     effect: "TestData/Effects/15/Material_Img6.efkefc",
     minColorBuckets: 8,
     maxWhiteLikeRatio: 0.25,
+    disabledByDefault: true,
   },
 ];
 
@@ -76,7 +79,7 @@ function parseArgs(argv) {
     port: 0,
     frames: 30,
     timeout: 45000,
-    caseName: "",
+    caseNames: [],
     effect: "",
     allowWebGPUSkip: process.env.EFK_ALLOW_WEBGPU_SKIP === "1",
   };
@@ -93,7 +96,7 @@ function parseArgs(argv) {
     } else if (arg === "--timeout") {
       options.timeout = Number(next());
     } else if (arg === "--case") {
-      options.caseName = next();
+      options.caseNames.push(next());
     } else if (arg === "--effect") {
       options.effect = next();
     } else if (arg === "--allow-webgpu-skip") {
@@ -399,6 +402,9 @@ async function runCase(browser, origin, testCase, options) {
     if (typeof result.changedPixels === "number" && result.changedPixels <= 0) {
       throw new Error(`${testCase.name} rendered no changed pixels.\n${JSON.stringify(result, null, 2)}`);
     }
+    if (testCase.requirePixelStats && typeof result.changedPixels !== "number") {
+      throw new Error(`${testCase.name} did not report changed pixel count.\n${JSON.stringify(result, null, 2)}`);
+    }
 
     const needsPixelStats = testCase.minColorBuckets !== undefined || testCase.maxWhiteLikeRatio !== undefined;
     if (needsPixelStats && !result.pixelStats) {
@@ -426,11 +432,16 @@ async function runCase(browser, origin, testCase, options) {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
-  const cases = options.caseName
-    ? defaultCases.filter((testCase) => testCase.name === options.caseName)
-    : defaultCases;
-  if (cases.length === 0) {
-    throw new Error(`Unknown smoke test case: ${options.caseName}`);
+  let cases;
+  if (options.caseNames.length > 0) {
+    const casesByName = new Map(defaultCases.map((testCase) => [testCase.name, testCase]));
+    const unknownCases = options.caseNames.filter((caseName) => !casesByName.has(caseName));
+    if (unknownCases.length > 0) {
+      throw new Error(`Unknown smoke test case: ${unknownCases.join(", ")}`);
+    }
+    cases = options.caseNames.map((caseName) => casesByName.get(caseName));
+  } else {
+    cases = defaultCases.filter((testCase) => !testCase.disabledByDefault);
   }
 
   const browser = findBrowser(options.browser);

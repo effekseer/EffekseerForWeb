@@ -15,6 +15,7 @@ function createNativeModule(initValue) {
   const module = {
     calls,
     HEAP8: new Int8Array(memory),
+    HEAPU8: new Uint8Array(memory),
     HEAPF32: new Float32Array(memory),
     GL: {
       registerContext(_context, attrs) {
@@ -50,6 +51,12 @@ function createNativeModule(initValue) {
         }
         if (name === "EffekseerBeginWebGPUFrame" || name === "EffekseerDrawToExternalWebGPURenderPass") {
           return 1;
+        }
+        if (name === "EffekseerReadWebGPUFrameBuffer") {
+          const ptr = Number(args[1]);
+          const bytes = [12, 34, 56, 78, 90, 123, 156, 200];
+          module.HEAPU8.set(bytes, ptr);
+          return bytes.length;
         }
         if (name === "EffekseerPlayEffect") {
           return 10;
@@ -144,6 +151,32 @@ test("WebGPU high-level canvas path calls begin, draw, end, and submit", async (
   assert.ok(names.includes("EffekseerEndWebGPURenderPass"));
   assert.ok(names.includes("EffekseerSubmitWebGPUFrame"));
   assert.equal(getLastWebGPUError(), "validation-message");
+});
+
+test("WebGPU high-level frame buffer readback copies native pixels", async () => {
+  const native = createNativeModule(242);
+  await initRuntime({
+    backend: "webgpu",
+    device: new EventTarget(),
+    moduleFactory: async () => native,
+  });
+
+  const context = await createContext({
+    backend: "webgpu",
+    device: new EventTarget(),
+    colorFormat: "rgba8unorm",
+    width: 2,
+    height: 1,
+  });
+
+  const readback = await context.readFrameBuffer();
+  assert.equal(readback.width, 2);
+  assert.equal(readback.height, 1);
+  assert.equal(readback.bytesPerRow, 8);
+  assert.deepEqual(Array.from(readback.data), [12, 34, 56, 78, 90, 123, 156, 200]);
+  assert.ok(native.calls.some((call) => call[0] === "EffekseerReadWebGPUFrameBuffer" && call[1] === 242));
+
+  context.release();
 });
 
 test("WebGPU low-level render pass path imports the external render pass", async () => {

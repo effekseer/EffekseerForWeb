@@ -6,6 +6,7 @@
 #include <AL/alc.h>
 #include <algorithm>
 #include <array>
+#include <cstring>
 #include <emscripten.h>
 #include <math.h>
 #include <memory>
@@ -699,6 +700,28 @@ public:
 			Effekseer::Backend::TextureFormatType::R8G8B8A8_UNORM,
 			Effekseer::Backend::TextureFormatType::D32);
 		return true;
+	}
+
+	int32_t ReadWebGPUFrameBuffer(uint8_t* destination, int32_t destinationSize)
+	{
+		if (destination == nullptr || destinationSize <= 0 || webgpuFrameActive || webgpuColorBuffer == nullptr)
+		{
+			return 0;
+		}
+
+		std::vector<uint8_t> data;
+		if (!webgpuColorBuffer->GetData(data))
+		{
+			return 0;
+		}
+
+		if (static_cast<size_t>(destinationSize) < data.size())
+		{
+			return -static_cast<int32_t>(data.size());
+		}
+
+		std::memcpy(destination, data.data(), data.size());
+		return static_cast<int32_t>(data.size());
 	}
 #endif
 
