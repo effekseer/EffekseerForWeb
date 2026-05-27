@@ -34,8 +34,11 @@ http://localhost:8000/Sample/index.html
 
 ```text
 http://localhost:8000/Sample/webgl.html
+http://localhost:8000/Sample/basic-webgpu.html
 http://localhost:8000/Sample/webgpu.html
 ```
+
+`Sample/basic-webgpu.html` は最小構成の WebGPU デモです。WebGPU backend を初期化し、`Resources/00_Basic/Laser01.efkefc` を読み込んで canvas に再生し、Three.js やアプリケーション側の render pass を使わずに `drawToCanvas()` で描画します。より大きい Three.js / external render pass の例は `Sample/webgpu.html` を参照してください。
 
 多くのブラウザでは `file://` から `.wasm` やエフェクトの関連リソースを正しく読み込めません。ローカルで確認する場合も HTTP サーバーを使ってください。
 
@@ -126,6 +129,7 @@ context.setCameraFromThree(camera);
 WebGPU の描画先をアプリケーション側の render pass で完全に管理する場合は、`drawToRenderPass(renderPassEncoder, options)` を使用します。この場合、render pass の開始、終了、command buffer の submit はアプリケーション側で行います。
 
 配布パッケージの `Sample/webgpu.html` と `Sample/webgpu.js` は、この外部 render pass を使った WebGPU サンプルです。
+配布パッケージの `Sample/basic-webgpu.html` と `Sample/basic-webgpu.js` は、最小構成の `drawToCanvas()` パスを示します。
 
 ## 音声を使う場合
 

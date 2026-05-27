@@ -34,8 +34,15 @@ You can also open each sample directly:
 
 ```text
 http://localhost:8000/Sample/webgl.html
+http://localhost:8000/Sample/basic-webgpu.html
 http://localhost:8000/Sample/webgpu.html
 ```
+
+`Sample/basic-webgpu.html` is the smallest WebGPU integration demo. It initializes
+the WebGPU backend, loads `Resources/00_Basic/Laser01.efkefc`, plays it on the
+canvas, and uses `drawToCanvas()` without Three.js or an application-owned render
+pass. Use `Sample/webgpu.html` when you want the larger Three.js/external render
+pass sample.
 
 Browsers generally cannot load `.wasm` and effect resources correctly from `file://`, so use HTTP even for local testing.
 
@@ -126,6 +133,8 @@ context.setCameraFromThree(camera);
 Use `drawToRenderPass(renderPassEncoder, options)` when your application fully owns the WebGPU render pass. In that mode, your application begins and ends the render pass and submits the command buffer.
 
 The bundled `Sample/webgpu.html` and `Sample/webgpu.js` use this external render pass path for the WebGPU sample.
+The bundled `Sample/basic-webgpu.html` and `Sample/basic-webgpu.js` show the
+minimal `drawToCanvas()` path.
 
 ## Audio
 
