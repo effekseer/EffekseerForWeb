@@ -16,9 +16,17 @@ const wasm = params.get("wasm") || `../../dist/effekseer-${backend}-native.wasm`
 const effectPath = params.get("effect") || "";
 const frames = Number(params.get("frames") || "30");
 const cameraMode = params.get("camera") || "";
+const alphaMode = params.get("alphaMode") || "";
+const compositeBackground = params.get("compositeBackground") || "";
 const cameraPosition = { x: 20, y: 20, z: 20 };
 const cameraTarget = { x: 0, y: 0, z: 0 };
 const cameraFov = 30;
+
+if (compositeBackground) {
+  document.documentElement.style.background = compositeBackground;
+  document.body.style.background = compositeBackground;
+  canvas.style.background = "transparent";
+}
 
 function report(payload) {
   result.textContent = JSON.stringify(payload, null, 2);
@@ -254,6 +262,8 @@ async function main() {
       canvasContext,
       colorFormat,
       depthFormat,
+      alphaMode: alphaMode || undefined,
+      enablePremultipliedAlpha: alphaMode === "premultiplied" ? true : undefined,
     });
     webgpuDevice = context.device;
   }

@@ -75,6 +75,8 @@ The CI suite covers:
 - `webgl-basic`
 - `webgl-material`
 - `webgpu-canvas`
+- `webgpu-alpha-premultiplied`
+- `webgpu-alpha-opaque`
 - `webgpu-external`
 - `webgpu-texture`
 

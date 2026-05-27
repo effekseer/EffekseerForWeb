@@ -5,6 +5,7 @@ import { extname, join, normalize, resolve, sep } from "node:path";
 import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
+import { inflateSync } from "node:zlib";
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 
@@ -40,6 +41,28 @@ const defaultCases = [
     effect: "TestData/Effects/10/Sprite_Parameters1.efk",
     requirePixelStats: true,
     minColorBuckets: 8,
+  },
+  {
+    name: "webgpu-alpha-premultiplied",
+    backend: "webgpu",
+    mode: "canvas",
+    effect: "TestData/Effects/10/Sprite_Parameters1.efk",
+    alphaMode: "premultiplied",
+    compositeBackground: [34, 170, 102],
+    compositeExpectation: "background",
+    compositeSample: { x: 12, y: 12 },
+    requirePixelStats: true,
+  },
+  {
+    name: "webgpu-alpha-opaque",
+    backend: "webgpu",
+    mode: "canvas",
+    effect: "TestData/Effects/10/Sprite_Parameters1.efk",
+    alphaMode: "opaque",
+    compositeBackground: [34, 170, 102],
+    compositeExpectation: "opaque",
+    compositeSample: { x: 12, y: 12 },
+    requirePixelStats: true,
   },
   {
     name: "webgpu-external",
@@ -361,6 +384,151 @@ async function removeProfileDir(userDataDir) {
   console.warn(`Warning: failed to remove browser profile ${userDataDir}: ${message}`);
 }
 
+function paethPredictor(left, above, upperLeft) {
+  const p = left + above - upperLeft;
+  const pa = Math.abs(p - left);
+  const pb = Math.abs(p - above);
+  const pc = Math.abs(p - upperLeft);
+  if (pa <= pb && pa <= pc) {
+    return left;
+  }
+  if (pb <= pc) {
+    return above;
+  }
+  return upperLeft;
+}
+
+function decodePngPixels(data) {
+  const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  if (!data.subarray(0, 8).equals(signature)) {
+    throw new Error("Screenshot is not a PNG image.");
+  }
+
+  let width = 0;
+  let height = 0;
+  let bitDepth = 0;
+  let colorType = 0;
+  const idatChunks = [];
+  let offset = 8;
+  while (offset < data.length) {
+    const length = data.readUInt32BE(offset);
+    const type = data.toString("ascii", offset + 4, offset + 8);
+    const chunk = data.subarray(offset + 8, offset + 8 + length);
+    offset += 12 + length;
+
+    if (type === "IHDR") {
+      width = chunk.readUInt32BE(0);
+      height = chunk.readUInt32BE(4);
+      bitDepth = chunk[8];
+      colorType = chunk[9];
+      const interlace = chunk[12];
+      if (bitDepth !== 8 || interlace !== 0 || (colorType !== 2 && colorType !== 6)) {
+        throw new Error(`Unsupported screenshot PNG format: bitDepth=${bitDepth}, colorType=${colorType}, interlace=${interlace}`);
+      }
+    } else if (type === "IDAT") {
+      idatChunks.push(chunk);
+    } else if (type === "IEND") {
+      break;
+    }
+  }
+
+  const bytesPerPixel = colorType === 6 ? 4 : 3;
+  const rowBytes = width * bytesPerPixel;
+  const inflated = inflateSync(Buffer.concat(idatChunks));
+  const raw = Buffer.alloc(rowBytes * height);
+  let source = 0;
+
+  for (let y = 0; y < height; y++) {
+    const filter = inflated[source++];
+    const row = y * rowBytes;
+    const previousRow = row - rowBytes;
+    for (let x = 0; x < rowBytes; x++) {
+      const left = x >= bytesPerPixel ? raw[row + x - bytesPerPixel] : 0;
+      const above = y > 0 ? raw[previousRow + x] : 0;
+      const upperLeft = y > 0 && x >= bytesPerPixel ? raw[previousRow + x - bytesPerPixel] : 0;
+      let value = inflated[source++];
+      if (filter === 1) {
+        value += left;
+      } else if (filter === 2) {
+        value += above;
+      } else if (filter === 3) {
+        value += Math.floor((left + above) / 2);
+      } else if (filter === 4) {
+        value += paethPredictor(left, above, upperLeft);
+      } else if (filter !== 0) {
+        throw new Error(`Unsupported PNG filter: ${filter}`);
+      }
+      raw[row + x] = value & 0xff;
+    }
+  }
+
+  const rgba = new Uint8Array(width * height * 4);
+  for (let i = 0, j = 0; i < raw.length; i += bytesPerPixel, j += 4) {
+    rgba[j] = raw[i];
+    rgba[j + 1] = raw[i + 1];
+    rgba[j + 2] = raw[i + 2];
+    rgba[j + 3] = colorType === 6 ? raw[i + 3] : 255;
+  }
+  return { width, height, pixels: rgba };
+}
+
+async function captureCompositePixel(client, sample) {
+  const screenshot = await client.send("Page.captureScreenshot", {
+    format: "png",
+    fromSurface: true,
+    captureBeyondViewport: false,
+    clip: {
+      x: sample.x,
+      y: sample.y,
+      width: 1,
+      height: 1,
+      scale: 1,
+    },
+  });
+  const decoded = decodePngPixels(Buffer.from(screenshot.data, "base64"));
+  return Array.from(decoded.pixels.slice(0, 4));
+}
+
+function colorDistance(a, b) {
+  return Math.max(Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1]), Math.abs(a[2] - b[2]));
+}
+
+async function assertCompositeExpectation(client, testCase, result) {
+  if (!testCase.compositeExpectation) {
+    return result;
+  }
+
+  const background = testCase.compositeBackground;
+  const sample = testCase.compositeSample ?? { x: 12, y: 12 };
+  const pixel = await captureCompositePixel(client, sample);
+  const backgroundDistance = colorDistance(pixel, background);
+  const blackDistance = colorDistance(pixel, [0, 0, 0]);
+  const tolerance = 12;
+
+  if (testCase.compositeExpectation === "background" && backgroundDistance > tolerance) {
+    throw new Error(
+      `${testCase.name} did not composite with the HTML background. ` +
+        `pixel=${pixel.join(",")} expected=${background.join(",")} distance=${backgroundDistance}`,
+    );
+  }
+
+  if (testCase.compositeExpectation === "opaque" && blackDistance > tolerance) {
+    throw new Error(`${testCase.name} did not remain opaque black. pixel=${pixel.join(",")} distance=${blackDistance}`);
+  }
+
+  return {
+    ...result,
+    composite: {
+      expectation: testCase.compositeExpectation,
+      sample,
+      background,
+      pixel,
+      backgroundDistance,
+      blackDistance,
+    },
+  };
+}
+
 async function runCase(browser, origin, testCase, options) {
   const url = new URL("/tests/browser/smoke.html", origin);
   url.searchParams.set("backend", testCase.backend);
@@ -369,6 +537,12 @@ async function runCase(browser, origin, testCase, options) {
   url.searchParams.set("frames", String(options.frames));
   if (testCase.camera) {
     url.searchParams.set("camera", testCase.camera);
+  }
+  if (testCase.alphaMode) {
+    url.searchParams.set("alphaMode", testCase.alphaMode);
+  }
+  if (testCase.compositeBackground) {
+    url.searchParams.set("compositeBackground", `rgb(${testCase.compositeBackground.join(",")})`);
   }
 
   const tmpRoot = join(root, ".tmp");
@@ -424,7 +598,8 @@ async function runCase(browser, origin, testCase, options) {
     if (result.webgpuError) {
       throw new Error(`${testCase.name} reported WebGPU validation error: ${result.webgpuError}`);
     }
-    return { ...result, stderr };
+    const checkedResult = await assertCompositeExpectation(client, testCase, result);
+    return { ...checkedResult, stderr };
   } finally {
     client?.close();
     await stopBrowser(child);

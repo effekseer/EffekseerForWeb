@@ -158,6 +158,8 @@ export interface WebGPUContextOptions extends ContextOptionsBase {
   device?: GPUDevice;
   colorFormat?: GPUTextureFormat;
   depthFormat?: GPUTextureFormat;
+  enablePremultipliedAlpha?: boolean;
+  alphaMode?: GPUCanvasAlphaMode;
   width?: number;
   height?: number;
 }
@@ -215,7 +217,7 @@ export type UnzipConstructor = new (data: Uint8Array) => UnzipLike;
 
 interface NativeCore {
   InitWebGL(instanceMaxCount: number, squareMaxCount: number, extensions: number, premultipliedAlpha: number): number;
-  InitWebGPU(instanceMaxCount: number, squareMaxCount: number, width: number, height: number): number;
+  InitWebGPU(instanceMaxCount: number, squareMaxCount: number, width: number, height: number, premultipliedAlpha: number): number;
   Terminate(context: number): void;
   Update(context: number, deltaFrames: number): void;
   BeginUpdate(context: number): void;
@@ -231,6 +233,7 @@ interface NativeCore {
   SubmitWebGPUFrame(context: number): void;
   ReadWebGPUFrameBuffer(context: number, data: number, size: number): Promise<number>;
   ResizeWebGPU(context: number, width: number, height: number): number;
+  SetWebGPUPremultipliedAlpha(context: number, premultipliedAlpha: number): number;
   DrawToExternalWebGPURenderPass(context: number, renderPassEncoder: number, colorFormat: number, depthFormat: number): number;
   ReleaseImportedWebGPURenderPassEncoder(renderPassEncoder: number): void;
   SetProjectionMatrix(context: number, matrix: number): void;
@@ -311,7 +314,7 @@ function cwrapNumberAsync(module: NativeModule, name: string, args: NativeArgTyp
 function bindCore(module: NativeModule): NativeCore {
   return {
     InitWebGL: cwrapNumber(module, "EffekseerInitWebGL", ["number", "number", "number", "number"]),
-    InitWebGPU: cwrapNumber(module, "EffekseerInitWebGPU", ["number", "number", "number", "number"]),
+    InitWebGPU: cwrapNumber(module, "EffekseerInitWebGPU", ["number", "number", "number", "number", "number"]),
     Terminate: cwrapVoid(module, "EffekseerTerminate", ["number"]),
     Update: cwrapVoid(module, "EffekseerUpdate", ["number", "number"]),
     BeginUpdate: cwrapVoid(module, "EffekseerBeginUpdate", ["number"]),
@@ -327,6 +330,7 @@ function bindCore(module: NativeModule): NativeCore {
     SubmitWebGPUFrame: cwrapVoid(module, "EffekseerSubmitWebGPUFrame", ["number"]),
     ReadWebGPUFrameBuffer: cwrapNumberAsync(module, "EffekseerReadWebGPUFrameBuffer", ["number", "number", "number"]),
     ResizeWebGPU: cwrapNumber(module, "EffekseerResizeWebGPU", ["number", "number", "number"]),
+    SetWebGPUPremultipliedAlpha: cwrapNumber(module, "EffekseerSetWebGPUPremultipliedAlpha", ["number", "number"]),
     DrawToExternalWebGPURenderPass: cwrapNumber(module, "EffekseerDrawToExternalWebGPURenderPass", ["number", "number", "number", "number"]),
     ReleaseImportedWebGPURenderPassEncoder: cwrapVoid(module, "EffekseerReleaseImportedWebGPURenderPassEncoder", ["number"]),
     SetProjectionMatrix: cwrapVoid(module, "EffekseerSetProjectionMatrix", ["number", "number"]),
@@ -461,6 +465,10 @@ function prepareNativeWebGPUCanvas(canvas: HTMLCanvasElement | OffscreenCanvas |
   }
 
   canvas.id = "canvas";
+}
+
+function resolveWebGPUAlphaMode(options: { alphaMode?: GPUCanvasAlphaMode; enablePremultipliedAlpha?: boolean }): GPUCanvasAlphaMode {
+  return options.alphaMode ?? (options.enablePremultipliedAlpha ? "premultiplied" : "opaque");
 }
 
 function arrayBufferFromView(view: Uint8Array): ArrayBuffer {
@@ -985,6 +993,7 @@ export class WebGPUEffekseerContext extends BaseEffekseerContext {
   private renderPassActive = false;
   private colorFormat: GPUTextureFormat;
   private depthFormat: GPUTextureFormat | undefined;
+  private alphaMode: GPUCanvasAlphaMode;
   private width: number;
   private height: number;
 
@@ -994,25 +1003,44 @@ export class WebGPUEffekseerContext extends BaseEffekseerContext {
     const width = options.width ?? ("width" in (canvas ?? {}) ? Number((canvas as HTMLCanvasElement).width) : 640);
     const height = options.height ?? ("height" in (canvas ?? {}) ? Number((canvas as HTMLCanvasElement).height) : 480);
     const colorFormat = options.colorFormat ?? navigator.gpu.getPreferredCanvasFormat();
+    const alphaMode = resolveWebGPUAlphaMode(options);
     options.canvasContext?.configure({
       device: options.device ?? runtime.module.preinitializedWebGPUDevice!,
       format: colorFormat,
-      alphaMode: "premultiplied",
+      alphaMode,
     });
-    const nativePtr = runtime.core.InitWebGPU(options.instanceMaxCount ?? 4000, options.squareMaxCount ?? 10000, width, height);
+    const nativePtr = runtime.core.InitWebGPU(
+      options.instanceMaxCount ?? 4000,
+      options.squareMaxCount ?? 10000,
+      width,
+      height,
+      alphaMode === "premultiplied" ? 1 : 0,
+    );
     super(runtime, "webgpu", nativePtr);
     this.device = options.device ?? runtime.module.preinitializedWebGPUDevice;
     this.canvasContext = options.canvasContext;
     this.colorFormat = colorFormat;
     this.depthFormat = options.depthFormat;
+    this.alphaMode = alphaMode;
     this.width = width;
     this.height = height;
   }
 
-  configureSurface(options: { width?: number; height?: number; colorFormat?: GPUTextureFormat; depthFormat?: GPUTextureFormat; alphaMode?: GPUCanvasAlphaMode } = {}): void {
+  configureSurface(options: { width?: number; height?: number; colorFormat?: GPUTextureFormat; depthFormat?: GPUTextureFormat; alphaMode?: GPUCanvasAlphaMode; enablePremultipliedAlpha?: boolean } = {}): void {
     this.assertAlive();
     if (this.frameActive) {
       throw new InvalidOperationError("configureSurface cannot be called while a WebGPU frame is active.");
+    }
+
+    const alphaMode = resolveWebGPUAlphaMode({
+      alphaMode: options.alphaMode,
+      enablePremultipliedAlpha: options.enablePremultipliedAlpha ?? (this.alphaMode === "premultiplied"),
+    });
+    if (alphaMode !== this.alphaMode) {
+      if (this.runtime.core.SetWebGPUPremultipliedAlpha(this.nativePtr, alphaMode === "premultiplied" ? 1 : 0) === 0) {
+        throw new NativeInitializationError("Failed to update the native WebGPU alpha mode.");
+      }
+      this.alphaMode = alphaMode;
     }
 
     if (this.canvasContext && this.device) {
@@ -1020,7 +1048,7 @@ export class WebGPUEffekseerContext extends BaseEffekseerContext {
       this.canvasContext.configure({
         device: this.device,
         format: this.colorFormat,
-        alphaMode: options.alphaMode ?? "premultiplied",
+        alphaMode: this.alphaMode,
       });
     }
     this.depthFormat = options.depthFormat ?? this.depthFormat;

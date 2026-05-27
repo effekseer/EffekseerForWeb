@@ -25,12 +25,12 @@ extern "C"
 #endif
 	}
 
-	Context* EXPORT EffekseerInitWebGPU(int instanceMaxCount, int squareMaxCount, int width, int height)
+	Context* EXPORT EffekseerInitWebGPU(int instanceMaxCount, int squareMaxCount, int width, int height, int isPremultipliedAlphaEnabled)
 	{
 		Effekseer::SetLogger([](Effekseer::LogType, const std::string& s) -> void { PrintEffekseerLog("EffekseerLog: " + s); });
 #if defined(EFFEKSEER_FOR_WEB_WEBGPU)
 		auto context = new Context();
-		if (!context->InitWebGPU(instanceMaxCount, squareMaxCount, width, height))
+		if (!context->InitWebGPU(instanceMaxCount, squareMaxCount, width, height, isPremultipliedAlphaEnabled != 0))
 		{
 			context->Terminate();
 			delete context;
@@ -42,6 +42,7 @@ extern "C"
 		(void)squareMaxCount;
 		(void)width;
 		(void)height;
+		(void)isPremultipliedAlphaEnabled;
 		return nullptr;
 #endif
 	}
@@ -158,6 +159,17 @@ extern "C"
 		(void)context;
 		(void)width;
 		(void)height;
+		return 0;
+#endif
+	}
+
+	int EXPORT EffekseerSetWebGPUPremultipliedAlpha(Context* context, int isPremultipliedAlphaEnabled)
+	{
+#if defined(EFFEKSEER_FOR_WEB_WEBGPU)
+		return context != nullptr && context->SetWebGPUPremultipliedAlpha(isPremultipliedAlphaEnabled != 0) ? 1 : 0;
+#else
+		(void)context;
+		(void)isPremultipliedAlphaEnabled;
 		return 0;
 #endif
 	}

@@ -49,7 +49,12 @@ function createNativeModule(initValue) {
         if (name === "EffekseerInitWebGL" || name === "EffekseerInitWebGPU" || name === "EffekseerLoadEffect") {
           return initValue;
         }
-        if (name === "EffekseerBeginWebGPUFrame" || name === "EffekseerDrawToExternalWebGPURenderPass") {
+        if (
+          name === "EffekseerBeginWebGPUFrame" ||
+          name === "EffekseerDrawToExternalWebGPURenderPass" ||
+          name === "EffekseerResizeWebGPU" ||
+          name === "EffekseerSetWebGPUPremultipliedAlpha"
+        ) {
           return 1;
         }
         if (name === "EffekseerReadWebGPUFrameBuffer") {
@@ -151,6 +156,61 @@ test("WebGPU high-level canvas path calls begin, draw, end, and submit", async (
   assert.ok(names.includes("EffekseerEndWebGPURenderPass"));
   assert.ok(names.includes("EffekseerSubmitWebGPUFrame"));
   assert.equal(getLastWebGPUError(), "validation-message");
+});
+
+test("WebGPU premultiplied alpha is passed to canvas and native initialization", async () => {
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: {
+      gpu: {
+        getPreferredCanvasFormat: () => "bgra8unorm",
+      },
+    },
+  });
+
+  const native = createNativeModule(212);
+  const device = new EventTarget();
+  const configureCalls = [];
+  await initRuntime({
+    backend: "webgpu",
+    device,
+    moduleFactory: async (options) => {
+      native.preinitializedWebGPUDevice = options.preinitializedWebGPUDevice;
+      return native;
+    },
+  });
+
+  const context = await createContext({
+    backend: "webgpu",
+    device,
+    canvasContext: {
+      canvas: { width: 16, height: 8 },
+      configure(configuration) {
+        configureCalls.push(configuration);
+      },
+    },
+    colorFormat: "bgra8unorm",
+    enablePremultipliedAlpha: true,
+  });
+
+  assert.equal(configureCalls[0].alphaMode, "premultiplied");
+  assert.ok(
+    native.calls.some(
+      (call) =>
+        call[0] === "EffekseerInitWebGPU" &&
+        call[1] === 4000 &&
+        call[2] === 10000 &&
+        call[3] === 16 &&
+        call[4] === 8 &&
+        call[5] === 1,
+    ),
+  );
+
+  context.configureSurface({ alphaMode: "opaque" });
+  assert.equal(configureCalls[configureCalls.length - 1].alphaMode, "opaque");
+  assert.ok(native.calls.some((call) => call[0] === "EffekseerSetWebGPUPremultipliedAlpha" && call[1] === 212 && call[2] === 0));
+
+  context.release();
 });
 
 test("WebGPU high-level frame buffer readback copies native pixels", async () => {

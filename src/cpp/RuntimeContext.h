@@ -38,6 +38,7 @@
 #include <LLGI.Texture.h>
 #include <Utils/LLGI.CommandListPool.h>
 #include <WebGPU/LLGI.CompilerWebGPU.h>
+#include <WebGPU/LLGI.PlatformWebGPU.h>
 #endif
 
 namespace
@@ -267,6 +268,7 @@ public:
 	Effekseer::RefPtr<EffekseerRenderer::CommandList> webgpuEffekseerCommandList = nullptr;
 	int32_t webgpuWidth = 0;
 	int32_t webgpuHeight = 0;
+	bool webgpuPremultipliedAlpha = false;
 	bool webgpuFrameActive = false;
 	bool webgpuRenderPassActive = false;
 
@@ -457,9 +459,10 @@ public:
 		return true;
 	}
 
-	bool InitWebGPU(int32_t instanceMaxCount, int32_t squareMaxCount, int32_t width, int32_t height)
+	bool InitWebGPU(int32_t instanceMaxCount, int32_t squareMaxCount, int32_t width, int32_t height, bool isPremultipliedAlphaEnabled)
 	{
 		InitializeSound();
+		webgpuPremultipliedAlpha = isPremultipliedAlphaEnabled;
 
 		webgpuWindow = LLGI::CreateWindow("EffekseerForWeb", LLGI::Vec2I(width, height));
 		if (webgpuWindow == nullptr)
@@ -470,6 +473,7 @@ public:
 		LLGI::PlatformParameter platformParam;
 		platformParam.Device = LLGI::DeviceType::WebGPU;
 		platformParam.WaitVSync = false;
+		platformParam.IsPremultipliedAlphaEnabled = isPremultipliedAlphaEnabled;
 		webgpuPlatform = LLGI::CreatePlatform(platformParam, webgpuWindow);
 		if (webgpuPlatform == nullptr)
 		{
@@ -496,7 +500,7 @@ public:
 		renderPassInfo.DepthFormat = wgpu::TextureFormat::Depth32Float;
 
 		auto graphicsDevice = Effekseer::MakeRefPtr<EffekseerRendererLLGI::Backend::GraphicsDevice>(webgpuGraphics);
-		renderer = EffekseerRendererWebGPU::Create(graphicsDevice, renderPassInfo, squareMaxCount);
+		renderer = EffekseerRendererWebGPU::Create(graphicsDevice, renderPassInfo, squareMaxCount, isPremultipliedAlphaEnabled);
 		if (renderer == nullptr)
 		{
 			return false;
@@ -538,7 +542,7 @@ public:
 		webgpuMemoryPool->NewFrame();
 		webgpuCommandList = LLGI::CreateSharedPtr(webgpuCommandListPool->Get(true));
 
-		LLGI::Color8 clearColor(0, 0, 0, 255);
+		LLGI::Color8 clearColor(0, 0, 0, webgpuPremultipliedAlpha ? 0 : 255);
 		webgpuRenderPass->SetClearColor(clearColor);
 		webgpuRenderPass->SetIsColorCleared(true);
 		webgpuRenderPass->SetIsDepthCleared(true);
@@ -614,7 +618,7 @@ public:
 			EndWebGPURenderPass();
 		}
 
-		auto currentScreen = webgpuPlatform->GetCurrentScreen(LLGI::Color8(0, 0, 0, 255), true);
+		auto currentScreen = webgpuPlatform->GetCurrentScreen(LLGI::Color8(0, 0, 0, webgpuPremultipliedAlpha ? 0 : 255), true);
 		if (currentScreen == nullptr)
 		{
 			webgpuCommandList->End();
@@ -636,6 +640,7 @@ public:
 			copyPipeline->VertexLayoutCount = 3;
 			copyPipeline->IsDepthTestEnabled = false;
 			copyPipeline->IsDepthWriteEnabled = false;
+			copyPipeline->IsBlendEnabled = false;
 			copyPipeline->Culling = LLGI::CullingMode::DoubleSide;
 			copyPipeline->SetShader(LLGI::ShaderStageType::Vertex, copyVS);
 			copyPipeline->SetShader(LLGI::ShaderStageType::Pixel, copyPS);
@@ -680,6 +685,34 @@ public:
 		LLGI::SafeRelease(copyPipeline);
 
 		return CreateWebGPUFrameResources(width, height);
+	}
+
+	bool SetWebGPUPremultipliedAlpha(bool isPremultipliedAlphaEnabled)
+	{
+		if (webgpuFrameActive)
+		{
+			return false;
+		}
+
+		webgpuPremultipliedAlpha = isPremultipliedAlphaEnabled;
+		LLGI::SafeRelease(copyPipeline);
+
+		if (webgpuPlatform != nullptr)
+		{
+			static_cast<LLGI::PlatformWebGPU*>(webgpuPlatform)->SetPremultipliedAlphaEnabled(isPremultipliedAlphaEnabled);
+		}
+
+		if (renderer != nullptr)
+		{
+			auto rendererImpl = renderer.DownCast<EffekseerRendererLLGI::RendererImplemented>();
+			if (rendererImpl != nullptr)
+			{
+				rendererImpl->GetImpl()->IsPremultipliedAlphaEnabled = isPremultipliedAlphaEnabled;
+				rendererImpl->ResetPiplineStates();
+			}
+		}
+
+		return true;
 	}
 
 	bool DrawToExternalWebGPURenderPass(void* renderPassEncoder, int32_t colorFormat, int32_t depthFormat)
