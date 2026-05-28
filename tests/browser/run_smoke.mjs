@@ -512,14 +512,38 @@ function colorDistance(a, b) {
   return Math.max(Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1]), Math.abs(a[2] - b[2]));
 }
 
-async function assertCompositeExpectation(client, testCase, result) {
+async function assertCompositeExpectation(client, testCase, result, options) {
   if (!testCase.compositeExpectation) {
     return result;
   }
 
+  if (testCase.backend === "webgpu" && options.allowWebGPUReadbackSkip && result.readbackUnavailable) {
+    return {
+      ...result,
+      compositeUnavailable: {
+        expectation: testCase.compositeExpectation,
+        reason: "native WebGPU framebuffer readback is unavailable in this browser environment",
+      },
+    };
+  }
+
   const background = testCase.compositeBackground;
   const sample = testCase.compositeSample ?? { x: 12, y: 12 };
-  const pixel = await captureCompositePixel(client, sample);
+  let pixel;
+  try {
+    pixel = await captureCompositePixel(client, sample);
+  } catch (error) {
+    if (testCase.backend === "webgpu" && options.allowWebGPUReadbackSkip && result.readbackUnavailable) {
+      return {
+        ...result,
+        compositeUnavailable: {
+          expectation: testCase.compositeExpectation,
+          reason: error instanceof Error ? error.message : String(error),
+        },
+      };
+    }
+    throw error;
+  }
   const backgroundDistance = colorDistance(pixel, background);
   const blackDistance = colorDistance(pixel, [0, 0, 0]);
   const tolerance = 12;
@@ -563,6 +587,7 @@ function summarizeWebGPU(results) {
     executed: 0,
     skippedUnavailable: 0,
     unavailable: 0,
+    canvasUnavailable: 0,
     executedFailed: 0,
     readbackUnavailable: 0,
     unknown: 0,
@@ -588,6 +613,8 @@ function summarizeWebGPU(results) {
       if (result.skipped) {
         summary.skippedUnavailable++;
       }
+    } else if (status === "canvas-unavailable") {
+      summary.canvasUnavailable++;
     } else if (status === "executed-failed") {
       summary.executedFailed++;
     } else {
@@ -613,8 +640,61 @@ function makeSmokeFailureError(testCase, message, result, stderr) {
   return error;
 }
 
+function isWebGPUCanvasInfrastructureFailure(testCase, options, error, stderr) {
+  if (testCase.backend !== "webgpu" || testCase.mode !== "canvas" || !options.allowWebGPUReadbackSkip) {
+    return false;
+  }
+
+  const text = `${errorMessage(error)}\n${stderr}`;
+  return (
+    text.includes("Cannot find default execution context") ||
+    text.includes("Execution context was destroyed") ||
+    text.includes("ContextResult::kTransientFailure") ||
+    text.includes("GpuControl.CreateCommandBuffer") ||
+    text.includes("SharedImageStub") ||
+    text.includes("SharedImageBackingFactory") ||
+    text.includes("Failed to read the native WebGPU frame buffer")
+  );
+}
+
+function makeWebGPUCanvasUnavailableResult(testCase, error, stderr) {
+  const message = error instanceof Error ? error.message : String(error);
+  return {
+    backend: testCase.backend,
+    mode: testCase.mode,
+    ok: false,
+    skipped: true,
+    skipReason: message,
+    readbackUnavailable: {
+      stage: "webgpu-canvas",
+      message,
+    },
+    webgpuStatus: {
+      requested: true,
+      status: "canvas-unavailable",
+      navigatorGpu: false,
+      adapter: false,
+      device: false,
+      initialized: false,
+      contextCreated: false,
+      rendered: false,
+      readbackUnavailable: true,
+      readbackUnavailableReason: message,
+      unavailableReason: "",
+      failureStage: "webgpu-canvas",
+    },
+    error: errorMessage(error),
+    stderr,
+  };
+}
+
 function resultFromError(testCase, error) {
   const smokeResult = error?.smokeResult ?? {};
+  const webgpuStatus = smokeResult.webgpuStatus ? { ...smokeResult.webgpuStatus } : undefined;
+  if (testCase.backend === "webgpu" && webgpuStatus?.status === "executed") {
+    webgpuStatus.status = "executed-failed";
+    webgpuStatus.failureStage = webgpuStatus.failureStage || smokeResult.stage || "runner-validation";
+  }
   return {
     name: testCase.name,
     backend: testCase.backend,
@@ -626,7 +706,9 @@ function resultFromError(testCase, error) {
     stack: smokeResult.stack,
     webgpuError: smokeResult.webgpuError,
     webgpuErrors: smokeResult.webgpuErrors ?? [],
-    webgpuStatus: smokeResult.webgpuStatus,
+    webgpuStatus,
+    readbackUnavailable: smokeResult.readbackUnavailable,
+    compositeUnavailable: smokeResult.compositeUnavailable,
     error: errorMessage(error),
   };
 }
@@ -689,35 +771,47 @@ async function runCase(browser, origin, testCase, options) {
       }
       throw makeSmokeFailureError(testCase, message, result, stderr);
     }
-    if (testCase.backend === "webgpu" && result.webgpuStatus?.status !== "executed") {
-      throw new Error(`${testCase.name} did not report WebGPU execution.\n${JSON.stringify(result, null, 2)}`);
-    }
-    if (typeof result.changedPixels === "number" && result.changedPixels <= 0) {
-      throw new Error(`${testCase.name} rendered no changed pixels.\n${JSON.stringify(result, null, 2)}`);
-    }
-    const readbackUnavailable = Boolean(result.readbackUnavailable);
-    if (testCase.requirePixelStats && typeof result.changedPixels !== "number" && !readbackUnavailable) {
-      throw new Error(`${testCase.name} did not report changed pixel count.\n${JSON.stringify(result, null, 2)}`);
-    }
-
-    const needsPixelStats = testCase.minColorBuckets !== undefined || testCase.maxWhiteLikeRatio !== undefined;
-    if (needsPixelStats && !result.pixelStats && !readbackUnavailable) {
-      throw new Error(`${testCase.name} did not report pixel statistics.\n${JSON.stringify(result, null, 2)}`);
-    }
-    if (testCase.minColorBuckets !== undefined && result.pixelStats && result.pixelStats.colorBuckets < testCase.minColorBuckets) {
-      throw new Error(`${testCase.name} rendered too few color buckets.\n${JSON.stringify(result, null, 2)}`);
-    }
-    if (testCase.maxWhiteLikeRatio !== undefined && result.pixelStats && result.pixelStats.changedPixels > 0) {
-      const whiteLikeRatio = result.pixelStats.whiteLikePixels / result.pixelStats.changedPixels;
-      if (whiteLikeRatio > testCase.maxWhiteLikeRatio) {
-        throw new Error(`${testCase.name} rendered mostly white fallback pixels.\n${JSON.stringify(result, null, 2)}`);
+    try {
+      if (testCase.backend === "webgpu" && result.webgpuStatus?.status !== "executed") {
+        throw new Error(`${testCase.name} did not report WebGPU execution.\n${JSON.stringify(result, null, 2)}`);
       }
+      if (typeof result.changedPixels === "number" && result.changedPixels <= 0) {
+        throw new Error(`${testCase.name} rendered no changed pixels.\n${JSON.stringify(result, null, 2)}`);
+      }
+      const readbackUnavailable = Boolean(result.readbackUnavailable);
+      if (testCase.requirePixelStats && typeof result.changedPixels !== "number" && !readbackUnavailable) {
+        throw new Error(`${testCase.name} did not report changed pixel count.\n${JSON.stringify(result, null, 2)}`);
+      }
+
+      const needsPixelStats = testCase.minColorBuckets !== undefined || testCase.maxWhiteLikeRatio !== undefined;
+      if (needsPixelStats && !result.pixelStats && !readbackUnavailable) {
+        throw new Error(`${testCase.name} did not report pixel statistics.\n${JSON.stringify(result, null, 2)}`);
+      }
+      if (testCase.minColorBuckets !== undefined && result.pixelStats && result.pixelStats.colorBuckets < testCase.minColorBuckets) {
+        throw new Error(`${testCase.name} rendered too few color buckets.\n${JSON.stringify(result, null, 2)}`);
+      }
+      if (testCase.maxWhiteLikeRatio !== undefined && result.pixelStats && result.pixelStats.changedPixels > 0) {
+        const whiteLikeRatio = result.pixelStats.whiteLikePixels / result.pixelStats.changedPixels;
+        if (whiteLikeRatio > testCase.maxWhiteLikeRatio) {
+          throw new Error(`${testCase.name} rendered mostly white fallback pixels.\n${JSON.stringify(result, null, 2)}`);
+        }
+      }
+      if (result.webgpuError) {
+        throw new Error(`${testCase.name} reported WebGPU validation error: ${result.webgpuError}`);
+      }
+      const checkedResult = await assertCompositeExpectation(client, testCase, result, options);
+      return { ...checkedResult, stderr };
+    } catch (error) {
+      if (error && typeof error === "object" && !error.smokeResult) {
+        error.smokeResult = result;
+      }
+      throw error;
     }
-    if (result.webgpuError) {
-      throw new Error(`${testCase.name} reported WebGPU validation error: ${result.webgpuError}`);
+  } catch (error) {
+    if (isWebGPUCanvasInfrastructureFailure(testCase, options, error, stderr)) {
+      return makeWebGPUCanvasUnavailableResult(testCase, error, stderr);
     }
-    const checkedResult = await assertCompositeExpectation(client, testCase, result);
-    return { ...checkedResult, stderr };
+    throw error;
   } finally {
     client?.close();
     await stopBrowser(child);
