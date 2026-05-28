@@ -202,13 +202,111 @@ test("WebGPU premultiplied alpha is passed to canvas and native initialization",
         call[2] === 10000 &&
         call[3] === 16 &&
         call[4] === 8 &&
-        call[5] === 1,
+        call[5] === 1 &&
+        call[6] === 0,
     ),
   );
 
   context.configureSurface({ alphaMode: "opaque" });
   assert.equal(configureCalls[configureCalls.length - 1].alphaMode, "opaque");
   assert.ok(native.calls.some((call) => call[0] === "EffekseerSetWebGPUPremultipliedAlpha" && call[1] === 212 && call[2] === 0));
+
+  context.release();
+});
+
+test("WebGPU OffscreenCanvas-style canvas context draws through an external render pass", async () => {
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: {
+      gpu: {
+        getPreferredCanvasFormat: () => "bgra8unorm",
+      },
+    },
+  });
+  Object.defineProperty(globalThis, "GPUTextureUsage", {
+    configurable: true,
+    value: {
+      RENDER_ATTACHMENT: 0x10,
+    },
+  });
+
+  const native = createNativeModule(222);
+  const deviceCalls = [];
+  const renderPass = {
+    end() {
+      deviceCalls.push(["pass.end"]);
+    },
+  };
+  const device = {
+    queue: {
+      submit(commandBuffers) {
+        deviceCalls.push(["queue.submit", commandBuffers]);
+      },
+    },
+    createCommandEncoder() {
+      deviceCalls.push(["createCommandEncoder"]);
+      return {
+        beginRenderPass(descriptor) {
+          deviceCalls.push(["beginRenderPass", descriptor]);
+          return renderPass;
+        },
+        finish() {
+          deviceCalls.push(["finish"]);
+          return "command-buffer";
+        },
+      };
+    },
+    createTexture(descriptor) {
+      deviceCalls.push(["createTexture", descriptor]);
+      return {
+        createView() {
+          return { depth: true };
+        },
+        destroy() {
+          deviceCalls.push(["depth.destroy"]);
+        },
+      };
+    },
+  };
+  const canvasTexture = {
+    createView() {
+      deviceCalls.push(["canvas.createView"]);
+      return { color: true };
+    },
+  };
+
+  await initRuntime({
+    backend: "webgpu",
+    device,
+    moduleFactory: async (options) => {
+      native.preinitializedWebGPUDevice = options.preinitializedWebGPUDevice;
+      return native;
+    },
+  });
+
+  const context = await createContext({
+    backend: "webgpu",
+    device,
+    canvasContext: {
+      canvas: { width: 32, height: 16 },
+      configure(configuration) {
+        deviceCalls.push(["canvas.configure", configuration]);
+      },
+      getCurrentTexture() {
+        deviceCalls.push(["getCurrentTexture"]);
+        return canvasTexture;
+      },
+    },
+    colorFormat: "bgra8unorm",
+  });
+
+  context.drawToCanvas();
+
+  assert.ok(native.calls.some((call) => call[0] === "EffekseerInitWebGPU" && call[6] === 0));
+  assert.ok(native.calls.some((call) => call[0] === "importRenderPass" && call[1] === renderPass));
+  assert.ok(native.calls.some((call) => call[0] === "EffekseerDrawToExternalWebGPURenderPass"));
+  assert.ok(!native.calls.some((call) => call[0] === "EffekseerBeginWebGPUFrame"));
+  assert.ok(deviceCalls.some((call) => call[0] === "queue.submit" && call[1][0] === "command-buffer"));
 
   context.release();
 });

@@ -25,12 +25,18 @@ extern "C"
 #endif
 	}
 
-	Context* EXPORT EffekseerInitWebGPU(int instanceMaxCount, int squareMaxCount, int width, int height, int isPremultipliedAlphaEnabled)
+	Context* EXPORT EffekseerInitWebGPU(
+		int instanceMaxCount,
+		int squareMaxCount,
+		int width,
+		int height,
+		int isPremultipliedAlphaEnabled,
+		int useNativeCanvasSurface)
 	{
 		Effekseer::SetLogger([](Effekseer::LogType, const std::string& s) -> void { PrintEffekseerLog("EffekseerLog: " + s); });
 #if defined(EFFEKSEER_FOR_WEB_WEBGPU)
 		auto context = new Context();
-		if (!context->InitWebGPU(instanceMaxCount, squareMaxCount, width, height, isPremultipliedAlphaEnabled != 0))
+		if (!context->InitWebGPU(instanceMaxCount, squareMaxCount, width, height, isPremultipliedAlphaEnabled != 0, useNativeCanvasSurface != 0))
 		{
 			context->Terminate();
 			delete context;
@@ -43,6 +49,7 @@ extern "C"
 		(void)width;
 		(void)height;
 		(void)isPremultipliedAlphaEnabled;
+		(void)useNativeCanvasSurface;
 		return nullptr;
 #endif
 	}

@@ -24,13 +24,25 @@ declare global {
     requestDevice(descriptor?: GPUDeviceDescriptor): Promise<GPUDevice>;
   }
 
-  interface GPUQueue {}
+  interface GPUQueue {
+    submit(commandBuffers: unknown[]): void;
+  }
 
   interface GPUDevice extends EventTarget {
     readonly queue: GPUQueue;
+    createCommandEncoder(descriptor?: Record<string, unknown>): GPUCommandEncoder;
+    createTexture(descriptor: Record<string, unknown>): GPUTexture;
   }
 
-  interface GPUTexture {}
+  interface GPUCommandEncoder {
+    beginRenderPass(descriptor: Record<string, unknown>): GPURenderPassEncoder;
+    finish(): unknown;
+  }
+
+  interface GPUTexture {
+    createView(): unknown;
+    destroy?(): void;
+  }
 
   interface GPUCanvasConfiguration {
     device: GPUDevice;
@@ -45,7 +57,9 @@ declare global {
     getCurrentTexture(): GPUTexture;
   }
 
-  interface GPURenderPassEncoder {}
+  interface GPURenderPassEncoder {
+    end(): void;
+  }
 
   interface GPU {
     requestAdapter(options?: GPURequestAdapterOptions): Promise<GPUAdapter | null>;
@@ -217,7 +231,7 @@ export type UnzipConstructor = new (data: Uint8Array) => UnzipLike;
 
 interface NativeCore {
   InitWebGL(instanceMaxCount: number, squareMaxCount: number, extensions: number, premultipliedAlpha: number): number;
-  InitWebGPU(instanceMaxCount: number, squareMaxCount: number, width: number, height: number, premultipliedAlpha: number): number;
+  InitWebGPU(instanceMaxCount: number, squareMaxCount: number, width: number, height: number, premultipliedAlpha: number, nativeCanvasSurface: number): number;
   Terminate(context: number): void;
   Update(context: number, deltaFrames: number): void;
   BeginUpdate(context: number): void;
@@ -314,7 +328,7 @@ function cwrapNumberAsync(module: NativeModule, name: string, args: NativeArgTyp
 function bindCore(module: NativeModule): NativeCore {
   return {
     InitWebGL: cwrapNumber(module, "EffekseerInitWebGL", ["number", "number", "number", "number"]),
-    InitWebGPU: cwrapNumber(module, "EffekseerInitWebGPU", ["number", "number", "number", "number", "number"]),
+    InitWebGPU: cwrapNumber(module, "EffekseerInitWebGPU", ["number", "number", "number", "number", "number", "number"]),
     Terminate: cwrapVoid(module, "EffekseerTerminate", ["number"]),
     Update: cwrapVoid(module, "EffekseerUpdate", ["number", "number"]),
     BeginUpdate: cwrapVoid(module, "EffekseerBeginUpdate", ["number"]),
@@ -465,6 +479,28 @@ function prepareNativeWebGPUCanvas(canvas: HTMLCanvasElement | OffscreenCanvas |
   }
 
   canvas.id = "canvas";
+}
+
+function usesNativeWebGPUCanvasSurface(canvas: HTMLCanvasElement | OffscreenCanvas | undefined, canvasContext: GPUCanvasContext | undefined): boolean {
+  if (!canvasContext) {
+    return true;
+  }
+  return typeof document !== "undefined" &&
+    typeof HTMLCanvasElement !== "undefined" &&
+    canvas instanceof HTMLCanvasElement;
+}
+
+function getCanvasDimension(canvas: HTMLCanvasElement | OffscreenCanvas | undefined, dimension: "width" | "height"): number | undefined {
+  return canvas && dimension in canvas ? Number(canvas[dimension]) : undefined;
+}
+
+function getGPUTextureUsageFlag(name: "RENDER_ATTACHMENT"): number {
+  const usage = (globalThis as unknown as { GPUTextureUsage?: Record<string, number> }).GPUTextureUsage;
+  const value = usage?.[name];
+  if (typeof value !== "number") {
+    throw new WebGPUUnavailableError(`GPUTextureUsage.${name} is unavailable.`);
+  }
+  return value;
 }
 
 function resolveWebGPUAlphaMode(options: { alphaMode?: GPUCanvasAlphaMode; enablePremultipliedAlpha?: boolean }): GPUCanvasAlphaMode {
@@ -989,6 +1025,7 @@ export class WebGLEffekseerContext extends BaseEffekseerContext {
 export class WebGPUEffekseerContext extends BaseEffekseerContext {
   readonly device: GPUDevice | undefined;
   readonly canvasContext: GPUCanvasContext | undefined;
+  private readonly nativeCanvasSurface: boolean;
   private frameActive = false;
   private renderPassActive = false;
   private colorFormat: GPUTextureFormat;
@@ -996,12 +1033,19 @@ export class WebGPUEffekseerContext extends BaseEffekseerContext {
   private alphaMode: GPUCanvasAlphaMode;
   private width: number;
   private height: number;
+  private canvasDepthTexture: GPUTexture | undefined;
+  private canvasDepthWidth = 0;
+  private canvasDepthHeight = 0;
+  private canvasDepthFormat: GPUTextureFormat | undefined;
 
   constructor(runtime: EffekseerRuntime, options: WebGPUContextOptions) {
     const canvas = options.canvas ?? options.canvasContext?.canvas;
-    prepareNativeWebGPUCanvas(canvas);
-    const width = options.width ?? ("width" in (canvas ?? {}) ? Number((canvas as HTMLCanvasElement).width) : 640);
-    const height = options.height ?? ("height" in (canvas ?? {}) ? Number((canvas as HTMLCanvasElement).height) : 480);
+    const nativeCanvasSurface = usesNativeWebGPUCanvasSurface(canvas, options.canvasContext);
+    if (nativeCanvasSurface) {
+      prepareNativeWebGPUCanvas(canvas);
+    }
+    const width = options.width ?? getCanvasDimension(canvas, "width") ?? 640;
+    const height = options.height ?? getCanvasDimension(canvas, "height") ?? 480;
     const colorFormat = options.colorFormat ?? navigator.gpu.getPreferredCanvasFormat();
     const alphaMode = resolveWebGPUAlphaMode(options);
     options.canvasContext?.configure({
@@ -1015,10 +1059,12 @@ export class WebGPUEffekseerContext extends BaseEffekseerContext {
       width,
       height,
       alphaMode === "premultiplied" ? 1 : 0,
+      nativeCanvasSurface ? 1 : 0,
     );
     super(runtime, "webgpu", nativePtr);
     this.device = options.device ?? runtime.module.preinitializedWebGPUDevice;
     this.canvasContext = options.canvasContext;
+    this.nativeCanvasSurface = nativeCanvasSurface;
     this.colorFormat = colorFormat;
     this.depthFormat = options.depthFormat;
     this.alphaMode = alphaMode;
@@ -1053,8 +1099,8 @@ export class WebGPUEffekseerContext extends BaseEffekseerContext {
     }
     this.depthFormat = options.depthFormat ?? this.depthFormat;
 
-    const width = options.width ?? (this.canvasContext?.canvas && "width" in this.canvasContext.canvas ? Number(this.canvasContext.canvas.width) : undefined);
-    const height = options.height ?? (this.canvasContext?.canvas && "height" in this.canvasContext.canvas ? Number(this.canvasContext.canvas.height) : undefined);
+    const width = options.width ?? getCanvasDimension(this.canvasContext?.canvas, "width");
+    const height = options.height ?? getCanvasDimension(this.canvasContext?.canvas, "height");
     if (width !== undefined && height !== undefined && this.runtime.core.ResizeWebGPU(this.nativePtr, width, height) === 0) {
       throw new NativeInitializationError("Failed to resize the native WebGPU surface.");
     }
@@ -1071,6 +1117,11 @@ export class WebGPUEffekseerContext extends BaseEffekseerContext {
   }
 
   drawToCanvas(): void {
+    if (!this.nativeCanvasSurface && this.canvasContext) {
+      this.drawToCanvasContext();
+      return;
+    }
+
     this.beginRenderPass();
     try {
       this.drawCurrentFrame();
@@ -1078,6 +1129,76 @@ export class WebGPUEffekseerContext extends BaseEffekseerContext {
       this.endRenderPass();
     }
     this.submit();
+  }
+
+  private drawToCanvasContext(): void {
+    this.assertAlive();
+    if (this.frameActive) {
+      throw new InvalidOperationError("drawToCanvas cannot run while a native WebGPU frame is active.");
+    }
+    if (!this.canvasContext || !this.device) {
+      throw new InvalidOperationError("drawToCanvas requires a WebGPU canvas context and device.");
+    }
+
+    const width = getCanvasDimension(this.canvasContext.canvas, "width") ?? this.width;
+    const height = getCanvasDimension(this.canvasContext.canvas, "height") ?? this.height;
+    const depthFormat = this.depthFormat ?? "depth32float";
+    const colorView = this.canvasContext.getCurrentTexture().createView();
+    const depthView = this.getCanvasDepthTexture(width, height, depthFormat).createView();
+    const encoder = this.device.createCommandEncoder();
+    const renderPass = encoder.beginRenderPass({
+      colorAttachments: [
+        {
+          view: colorView,
+          clearValue: { r: 0, g: 0, b: 0, a: this.alphaMode === "premultiplied" ? 0 : 1 },
+          loadOp: "clear",
+          storeOp: "store",
+        },
+      ],
+      depthStencilAttachment: {
+        view: depthView,
+        depthClearValue: 1,
+        depthLoadOp: "clear",
+        depthStoreOp: "store",
+      },
+    });
+    let shouldSubmit = false;
+    try {
+      this.drawToRenderPass(renderPass, { colorFormat: this.colorFormat, depthFormat });
+      shouldSubmit = true;
+    } finally {
+      renderPass.end();
+    }
+    if (shouldSubmit) {
+      this.device.queue.submit([encoder.finish()]);
+    }
+    this.width = width;
+    this.height = height;
+  }
+
+  private getCanvasDepthTexture(width: number, height: number, depthFormat: GPUTextureFormat): GPUTexture {
+    if (
+      this.canvasDepthTexture &&
+      this.canvasDepthWidth === width &&
+      this.canvasDepthHeight === height &&
+      this.canvasDepthFormat === depthFormat
+    ) {
+      return this.canvasDepthTexture;
+    }
+
+    this.canvasDepthTexture?.destroy?.();
+    this.canvasDepthTexture = this.device?.createTexture({
+      size: { width, height },
+      format: depthFormat,
+      usage: getGPUTextureUsageFlag("RENDER_ATTACHMENT"),
+    });
+    if (!this.canvasDepthTexture) {
+      throw new NativeInitializationError("Failed to create the WebGPU canvas depth texture.");
+    }
+    this.canvasDepthWidth = width;
+    this.canvasDepthHeight = height;
+    this.canvasDepthFormat = depthFormat;
+    return this.canvasDepthTexture;
   }
 
   beginRenderPass(): void {
@@ -1183,6 +1304,8 @@ export class WebGPUEffekseerContext extends BaseEffekseerContext {
     if (this.frameActive) {
       this.submit();
     }
+    this.canvasDepthTexture?.destroy?.();
+    this.canvasDepthTexture = undefined;
     super.release();
   }
 }

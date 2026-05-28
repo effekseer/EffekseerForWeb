@@ -459,22 +459,48 @@ public:
 		return true;
 	}
 
-	bool InitWebGPU(int32_t instanceMaxCount, int32_t squareMaxCount, int32_t width, int32_t height, bool isPremultipliedAlphaEnabled)
+	bool InitWebGPU(
+		int32_t instanceMaxCount,
+		int32_t squareMaxCount,
+		int32_t width,
+		int32_t height,
+		bool isPremultipliedAlphaEnabled,
+		bool useNativeCanvasSurface)
 	{
 		InitializeSound();
 		webgpuPremultipliedAlpha = isPremultipliedAlphaEnabled;
 
-		webgpuWindow = LLGI::CreateWindow("EffekseerForWeb", LLGI::Vec2I(width, height));
-		if (webgpuWindow == nullptr)
+		if (useNativeCanvasSurface)
 		{
-			return false;
+			webgpuWindow = LLGI::CreateWindow("EffekseerForWeb", LLGI::Vec2I(width, height));
+			if (webgpuWindow == nullptr)
+			{
+				return false;
+			}
+
+			LLGI::PlatformParameter platformParam;
+			platformParam.Device = LLGI::DeviceType::WebGPU;
+			platformParam.WaitVSync = false;
+			platformParam.IsPremultipliedAlphaEnabled = isPremultipliedAlphaEnabled;
+			webgpuPlatform = LLGI::CreatePlatform(platformParam, webgpuWindow);
+		}
+		else
+		{
+			auto device = wgpu::Device::Acquire(emscripten_webgpu_get_device());
+			if (device == nullptr)
+			{
+				return false;
+			}
+
+			auto platform = new LLGI::PlatformWebGPU();
+			if (!platform->Initialize(device, false, isPremultipliedAlphaEnabled))
+			{
+				LLGI::SafeRelease(platform);
+				return false;
+			}
+			webgpuPlatform = platform;
 		}
 
-		LLGI::PlatformParameter platformParam;
-		platformParam.Device = LLGI::DeviceType::WebGPU;
-		platformParam.WaitVSync = false;
-		platformParam.IsPremultipliedAlphaEnabled = isPremultipliedAlphaEnabled;
-		webgpuPlatform = LLGI::CreatePlatform(platformParam, webgpuWindow);
 		if (webgpuPlatform == nullptr)
 		{
 			return false;
