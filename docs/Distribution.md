@@ -89,6 +89,8 @@ The smoke output includes a top-level `webgpuSummary` and per-case `webgpuStatus
 - `webgpuStatus.status: "unavailable"` means the case did not execute because `navigator.gpu`, adapter, or device acquisition failed. This is the only WebGPU status that `--allow-webgpu-skip` may skip.
 - `webgpuStatus.status: "executed-failed"` means WebGPU was available and the case started, but a runtime, render, readback, validation, or pixel-stat check failed. CI must fail in this state.
 
+When a smoke case fails, the runner still prints the full JSON summary before exiting with a non-zero status. Check `webgpuSummary.executedFailed` and the failing case's `webgpuStatus.failureStage` first.
+
 When Chrome or Edge is not installed at a standard path, pass the browser path explicitly:
 
 ```sh

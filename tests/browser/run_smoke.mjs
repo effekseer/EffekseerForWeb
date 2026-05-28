@@ -580,6 +580,43 @@ function summarizeWebGPU(results) {
   return summary;
 }
 
+function errorMessage(error) {
+  return error instanceof Error ? error.stack || error.message : String(error);
+}
+
+function makeSmokeFailureError(testCase, message, result, stderr) {
+  const status = result.webgpuStatus
+    ? `\nWebGPU status:\n${JSON.stringify(result.webgpuStatus, null, 2)}`
+    : "";
+  const browserStack = result.stack ? `\nBrowser stack:\n${result.stack}` : "";
+  const browserErrors = result.webgpuErrors?.length ? `\nWebGPU errors:\n${result.webgpuErrors.join("\n")}` : "";
+  const error = new Error(`${testCase.name} failed: ${message}${status}${browserStack}${browserErrors}\n${stderr}`);
+  error.smokeResult = result;
+  return error;
+}
+
+function resultFromError(testCase, error) {
+  const smokeResult = error?.smokeResult ?? {};
+  return {
+    name: testCase.name,
+    backend: testCase.backend,
+    mode: testCase.mode,
+    ok: false,
+    failed: true,
+    stage: smokeResult.stage ?? "",
+    message: smokeResult.message ?? (error instanceof Error ? error.message : String(error)),
+    stack: smokeResult.stack,
+    webgpuError: smokeResult.webgpuError,
+    webgpuErrors: smokeResult.webgpuErrors ?? [],
+    webgpuStatus: smokeResult.webgpuStatus,
+    error: errorMessage(error),
+  };
+}
+
+function isAcceptedResult(result) {
+  return result.ok || result.skipped;
+}
+
 async function runCase(browser, origin, testCase, options) {
   const url = new URL("/tests/browser/smoke.html", origin);
   url.searchParams.set("backend", testCase.backend);
@@ -629,7 +666,7 @@ async function runCase(browser, origin, testCase, options) {
           stderr,
         };
       }
-      throw new Error(`${testCase.name} failed: ${message}\n${result.stack ?? ""}\n${stderr}`);
+      throw makeSmokeFailureError(testCase, message, result, stderr);
     }
     if (testCase.backend === "webgpu" && result.webgpuStatus?.status !== "executed") {
       throw new Error(`${testCase.name} did not report WebGPU execution.\n${JSON.stringify(result, null, 2)}`);
@@ -688,12 +725,27 @@ async function main() {
   try {
     const results = [];
     for (const testCase of cases) {
-      results.push({
-        name: testCase.name,
-        ...(await runCase(browser, origin, testCase, options)),
-      });
+      try {
+        results.push({
+          name: testCase.name,
+          ...(await runCase(browser, origin, testCase, options)),
+        });
+      } catch (error) {
+        results.push(resultFromError(testCase, error));
+      }
     }
-    console.log(JSON.stringify({ ok: true, browser, origin, webgpuSummary: summarizeWebGPU(results), results }, null, 2));
+    const ok = results.every(isAcceptedResult);
+    console.log(JSON.stringify({
+      ok,
+      browser,
+      origin,
+      failedCount: results.filter((result) => !isAcceptedResult(result)).length,
+      webgpuSummary: summarizeWebGPU(results),
+      results,
+    }, null, 2));
+    if (!ok) {
+      process.exitCode = 1;
+    }
   } finally {
     await new Promise((resolvePromise) => server.close(resolvePromise));
   }
