@@ -120,6 +120,51 @@ test("WebGL context registers and releases through the native API", async () => 
   assert.ok(native.calls.some((call) => call[0] === "EffekseerTerminate"));
 });
 
+test("WebGL OffscreenCanvas-provided context registers through the native API", async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "WebGL2RenderingContext");
+  class FakeWebGL2RenderingContext {}
+  class FakeOffscreenCanvas {
+    getContext(type) {
+      assert.equal(type, "webgl2");
+      return new FakeWebGL2RenderingContext();
+    }
+  }
+
+  Object.defineProperty(globalThis, "WebGL2RenderingContext", {
+    configurable: true,
+    value: FakeWebGL2RenderingContext,
+  });
+
+  try {
+    const native = createNativeModule(111);
+    await initRuntime({
+      backend: "webgl",
+      moduleFactory: async () => native,
+    });
+
+    const offscreenCanvas = new FakeOffscreenCanvas();
+    const context = await createContext({
+      backend: "webgl",
+      graphicsContext: offscreenCanvas.getContext("webgl2"),
+    });
+
+    context.draw();
+    context.release();
+
+    assert.deepEqual(native.calls.slice(0, 3), [
+      ["GL.registerContext", 2],
+      ["GL.makeContextCurrent", 77],
+      ["EffekseerInitWebGL", 4000, 10000, 1, 0],
+    ]);
+  } finally {
+    if (descriptor) {
+      Object.defineProperty(globalThis, "WebGL2RenderingContext", descriptor);
+    } else {
+      delete globalThis.WebGL2RenderingContext;
+    }
+  }
+});
+
 test("WebGPU high-level canvas path calls begin, draw, end, and submit", async () => {
   Object.defineProperty(globalThis, "navigator", {
     configurable: true,

@@ -42,6 +42,31 @@ http://localhost:8000/Sample/webgpu.html
 
 多くのブラウザでは `file://` から `.wasm` やエフェクトの関連リソースを正しく読み込めません。ローカルで確認する場合も HTTP サーバーを使ってください。
 
+## backend の使い分け
+
+WebGL と WebGPU は、runtime の初期化と `createContext()` に渡す描画先が異なります。エフェクトの読み込み、再生、更新、通常の canvas 描画は同じ流れで扱えます。
+
+| 目的 | WebGL | WebGPU |
+| --- | --- | --- |
+| runtime | `backend: "webgl"` と `effekseer-webgl.js` / `.wasm` | `backend: "webgpu"` と `effekseer-webgpu.js` / `.wasm`、`GPUDevice` |
+| 描画先 | `canvas.getContext("webgl2")`、`webgl`、または `OffscreenCanvas` から作った `graphicsContext` | `canvas.getContext("webgpu")` または `OffscreenCanvas` から作った `canvasContext` と `device` |
+| 通常の描画ループ | `context.update(1); context.draw();` | `context.update(1); context.draw();` |
+| アプリ側 render pass | なし | `context.drawToRenderPass(renderPassEncoder, options)` |
+
+通常の再生コードは backend に依存しません。
+
+```js
+const effect = await context.loadEffect("./Resources/00_Basic/Laser01.efkefc");
+context.play(effect, 0, 0, 0);
+
+function render() {
+  requestAnimationFrame(render);
+  context.update(1);
+  context.draw();
+}
+render();
+```
+
 ## 最小構成の WebGL 利用例
 
 ```html
@@ -79,6 +104,8 @@ http://localhost:8000/Sample/webgpu.html
 ```
 
 Three.js と組み合わせた完全な描画ループは `Sample/webgl.js` を参照してください。サンプルは同梱の `Sample/three.min.js` を使用します。
+
+WebGL では `OffscreenCanvas` から作成した WebGL context も同じ `graphicsContext` で渡せます。Worker 内で使う場合は `scriptPath` による script tag 読み込みではなく、`moduleFactory` で native module factory を渡してください。
 
 Three.js のカメラで描画する場合は、`setCameraFromThree(camera)` を呼び出してください。このヘルパーはデフォルトで `camera.updateMatrixWorld()` を呼び出し、`camera.projectionMatrix.elements` と `camera.matrixWorldInverse.elements` を Effekseer にコピーします。WebGL と WebGPU の両方の context で使えます。描画ループ側ですでにカメラを更新している場合は `{ updateMatrixWorld: false }` を渡してください。
 
@@ -120,7 +147,7 @@ context.setCameraFromThree(camera);
   function render() {
     requestAnimationFrame(render);
     context.update(1);
-    context.drawToCanvas();
+    context.draw();
   }
   render();
 </script>
@@ -130,6 +157,8 @@ WebGPU の描画先をアプリケーション側の render pass で完全に管
 
 配布パッケージの `Sample/webgpu.html` と `Sample/webgpu.js` は、この外部 render pass を使った WebGPU サンプルです。
 配布パッケージの `Sample/basic-webgpu.html` と `Sample/basic-webgpu.js` は、最小構成の `drawToCanvas()` パスを示します。
+
+WebGPU でも `OffscreenCanvas` から `webgpu` context を作成し、同じ `canvasContext` option で渡せます。通常の `draw()` はその `GPUCanvasContext` の current texture へ描画します。Worker 内では `moduleFactory` で native module factory を渡してください。
 
 ## 音声を使う場合
 

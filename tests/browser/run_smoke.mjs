@@ -17,6 +17,12 @@ const defaultCases = [
     effect: "TestData/Effects/10/Sprite_Parameters1.efk",
   },
   {
+    name: "webgl-offscreen",
+    backend: "webgl",
+    mode: "offscreen",
+    effect: "TestData/Effects/10/Sprite_Parameters1.efk",
+  },
+  {
     name: "webgl-material",
     backend: "webgl",
     mode: "canvas",
