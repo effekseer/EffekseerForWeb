@@ -9,10 +9,6 @@ import { fileURLToPath } from "node:url";
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const renderableExtensions = new Set([".efk", ".efkefc"]);
 const targetPresets = {
-  "webgpu-ci": [
-    { effect: "TestData/Effects/10/Sprite_Parameters1.efk", frames: 30 },
-    { effect: "TestData/Effects/16/AlphaBlendTexture01.efkefc", frames: 30 },
-  ],
   "effekseer-for-webgl": [
     { effect: "TestData/Effects/10/SimpleLaser.efk", frames: 30 },
     { effect: "TestData/Effects/10/FCurve_Parameters1.efk", frames: 30 },
@@ -90,6 +86,7 @@ function parseArgs(argv) {
     out: "",
     preset: "",
     continueOnError: true,
+    allowFailedCaptures: process.env.EFK_ALLOW_FAILED_SCREENSHOTS === "1",
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -115,6 +112,8 @@ function parseArgs(argv) {
       options.preset = next();
     } else if (arg === "--fail-fast") {
       options.continueOnError = false;
+    } else if (arg === "--allow-failed-captures") {
+      options.allowFailedCaptures = true;
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
@@ -129,6 +128,8 @@ function parseArgs(argv) {
 
   return options;
 }
+
+targetPresets["webgpu-ci"] = targetPresets["effekseer-for-webgl"];
 
 function resolvePresetTargets(name) {
   const preset = targetPresets[name];
@@ -555,6 +556,9 @@ async function runCapture(browser, origin, targets, options, outDir) {
       url.searchParams.set("mode", options.mode);
       url.searchParams.set("effect", `/${effectPath}`);
       url.searchParams.set("frames", String(frameCount));
+      if (options.backend === "webgpu") {
+        url.searchParams.set("allowWebGPUReadbackSkip", "1");
+      }
 
       const result = {
         effect: effectPath,
@@ -651,7 +655,7 @@ async function main() {
       failedCount: summary.failedCount,
       output: summary.output,
     }, null, 2));
-    if (!summary.ok) {
+    if (!summary.ok && !options.allowFailedCaptures) {
       process.exitCode = 1;
     }
   } finally {

@@ -86,7 +86,7 @@ The macOS WebGPU screenshot job runs:
 npm run test:screenshots:webgpu:ci
 ```
 
-That command captures the `webgpu-ci` preset through the WebGPU canvas path and writes to `test-results/testdata-screenshots/webgpu-ci`.
+That command captures the `webgpu-ci` preset through the WebGPU canvas path and writes to `test-results/testdata-screenshots/webgpu-ci`. The `webgpu-ci` preset intentionally mirrors the WebGL CI screenshot target list so macOS CI captures as many WebGPU images as the current runtime can render. Some WebGPU targets may still fail because of backend or fixture gaps; those failures are recorded in `summary.json` and `index.html`, while the command keeps the collected screenshots available as an artifact.
 
 The CI suite covers:
 

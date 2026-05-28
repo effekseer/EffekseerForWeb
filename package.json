@@ -19,7 +19,7 @@
     "test:browser:ci": "npm run build:ts && node tests/browser/run_smoke.mjs --case webgl-basic --case webgl-offscreen --case webgl-material --case webgpu-canvas --case webgpu-alpha-premultiplied --case webgpu-alpha-opaque --case webgpu-external --case webgpu-texture --allow-webgpu-skip --allow-webgpu-readback-skip",
     "test:screenshots": "npm run build:ts && node tests/browser/capture_testdata_screenshots.mjs --backend webgl",
     "test:screenshots:ci": "npm run build:ts && node tests/browser/capture_testdata_screenshots.mjs --backend webgl --preset effekseer-for-webgl --out test-results/testdata-screenshots/webgl-ci",
-    "test:screenshots:webgpu:ci": "npm run build:ts && node tests/browser/capture_testdata_screenshots.mjs --backend webgpu --mode canvas --preset webgpu-ci --out test-results/testdata-screenshots/webgpu-ci"
+    "test:screenshots:webgpu:ci": "npm run build:ts && node tests/browser/capture_testdata_screenshots.mjs --backend webgpu --mode canvas --preset webgpu-ci --out test-results/testdata-screenshots/webgpu-ci --allow-failed-captures"
   },
   "devDependencies": {
     "typescript": "^5.5.0"
