@@ -111,6 +111,7 @@ function parseArgs(argv) {
     caseNames: [],
     effect: "",
     allowWebGPUSkip: process.env.EFK_ALLOW_WEBGPU_SKIP === "1",
+    allowWebGPUReadbackSkip: process.env.EFK_ALLOW_WEBGPU_READBACK_SKIP === "1",
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -130,6 +131,8 @@ function parseArgs(argv) {
       options.effect = next();
     } else if (arg === "--allow-webgpu-skip") {
       options.allowWebGPUSkip = true;
+    } else if (arg === "--allow-webgpu-readback-skip") {
+      options.allowWebGPUReadbackSkip = true;
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
@@ -347,13 +350,23 @@ class CDPClient {
 async function waitForSmokeResult(client, timeout) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
-    const evaluated = await client.send("Runtime.evaluate", {
-      expression: "window.__effekseerSmokeResult || null",
-      returnByValue: true,
-    });
-    const value = evaluated?.result?.value;
-    if (value) {
-      return value;
+    try {
+      const evaluated = await client.send("Runtime.evaluate", {
+        expression: "window.__effekseerSmokeResult || null",
+        returnByValue: true,
+      });
+      const value = evaluated?.result?.value;
+      if (value) {
+        return value;
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (
+        !message.includes("Cannot find default execution context") &&
+        !message.includes("Execution context was destroyed")
+      ) {
+        throw error;
+      }
     }
     await delay(250);
   }
@@ -551,17 +564,22 @@ function summarizeWebGPU(results) {
     skippedUnavailable: 0,
     unavailable: 0,
     executedFailed: 0,
+    readbackUnavailable: 0,
     unknown: 0,
     cases: webgpuResults.map((result) => ({
       name: result.name,
       status: result.webgpuStatus?.status ?? "unknown",
       skipped: Boolean(result.skipped),
       stage: result.webgpuStatus?.failureStage || result.stage || "",
-      reason: result.skipReason || result.webgpuStatus?.unavailableReason || result.message || "",
+      readbackUnavailable: Boolean(result.readbackUnavailable || result.webgpuStatus?.readbackUnavailable),
+      reason: result.skipReason || result.readbackUnavailable?.message || result.webgpuStatus?.unavailableReason || result.message || "",
     })),
   };
 
   for (const result of webgpuResults) {
+    if (result.readbackUnavailable || result.webgpuStatus?.readbackUnavailable) {
+      summary.readbackUnavailable++;
+    }
     const status = result.webgpuStatus?.status;
     if (status === "executed") {
       summary.executed++;
@@ -629,6 +647,9 @@ async function runCase(browser, origin, testCase, options) {
   if (testCase.alphaMode) {
     url.searchParams.set("alphaMode", testCase.alphaMode);
   }
+  if (testCase.backend === "webgpu" && options.allowWebGPUReadbackSkip) {
+    url.searchParams.set("allowWebGPUReadbackSkip", "1");
+  }
   if (testCase.compositeBackground) {
     url.searchParams.set("compositeBackground", `rgb(${testCase.compositeBackground.join(",")})`);
   }
@@ -674,18 +695,19 @@ async function runCase(browser, origin, testCase, options) {
     if (typeof result.changedPixels === "number" && result.changedPixels <= 0) {
       throw new Error(`${testCase.name} rendered no changed pixels.\n${JSON.stringify(result, null, 2)}`);
     }
-    if (testCase.requirePixelStats && typeof result.changedPixels !== "number") {
+    const readbackUnavailable = Boolean(result.readbackUnavailable);
+    if (testCase.requirePixelStats && typeof result.changedPixels !== "number" && !readbackUnavailable) {
       throw new Error(`${testCase.name} did not report changed pixel count.\n${JSON.stringify(result, null, 2)}`);
     }
 
     const needsPixelStats = testCase.minColorBuckets !== undefined || testCase.maxWhiteLikeRatio !== undefined;
-    if (needsPixelStats && !result.pixelStats) {
+    if (needsPixelStats && !result.pixelStats && !readbackUnavailable) {
       throw new Error(`${testCase.name} did not report pixel statistics.\n${JSON.stringify(result, null, 2)}`);
     }
-    if (testCase.minColorBuckets !== undefined && result.pixelStats.colorBuckets < testCase.minColorBuckets) {
+    if (testCase.minColorBuckets !== undefined && result.pixelStats && result.pixelStats.colorBuckets < testCase.minColorBuckets) {
       throw new Error(`${testCase.name} rendered too few color buckets.\n${JSON.stringify(result, null, 2)}`);
     }
-    if (testCase.maxWhiteLikeRatio !== undefined && result.pixelStats.changedPixels > 0) {
+    if (testCase.maxWhiteLikeRatio !== undefined && result.pixelStats && result.pixelStats.changedPixels > 0) {
       const whiteLikeRatio = result.pixelStats.whiteLikePixels / result.pixelStats.changedPixels;
       if (whiteLikeRatio > testCase.maxWhiteLikeRatio) {
         throw new Error(`${testCase.name} rendered mostly white fallback pixels.\n${JSON.stringify(result, null, 2)}`);

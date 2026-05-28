@@ -81,13 +81,14 @@ The CI suite covers:
 - `webgpu-external`
 - `webgpu-texture`
 
-WebGL cases are required. WebGPU cases use `--allow-webgpu-skip` in CI, so they are skipped only when WebGPU is unavailable in the browser environment. If WebGPU is available, rendering pixel stats and validation error checks are required.
+WebGL cases are required. WebGPU cases use `--allow-webgpu-skip` in CI, so they are skipped only when WebGPU is unavailable in the browser environment. CI also passes `--allow-webgpu-readback-skip` because some headless Linux WebGPU/canvas combinations can render but fail native canvas framebuffer readback. The external render-pass WebGPU cases still require pixel stats and validation error checks.
 
 The smoke output includes a top-level `webgpuSummary` and per-case `webgpuStatus` entries. Use these fields to distinguish CI environments where WebGPU did not run from real WebGPU failures:
 
 - `webgpuStatus.status: "executed"` means the case acquired `navigator.gpu`, adapter, device, initialized the runtime, created a context, and rendered.
 - `webgpuStatus.status: "unavailable"` means the case did not execute because `navigator.gpu`, adapter, or device acquisition failed. This is the only WebGPU status that `--allow-webgpu-skip` may skip.
 - `webgpuStatus.status: "executed-failed"` means WebGPU was available and the case started, but a runtime, render, readback, validation, or pixel-stat check failed. CI must fail in this state.
+- `webgpuSummary.readbackUnavailable` counts WebGPU canvas cases where rendering completed but native canvas framebuffer readback was unavailable. This is allowed only with `--allow-webgpu-readback-skip`; inspect the per-case `readbackUnavailable.message` for the reason.
 
 When a smoke case fails, the runner still prints the full JSON summary before exiting with a non-zero status. Check `webgpuSummary.executedFailed` and the failing case's `webgpuStatus.failureStage` first.
 

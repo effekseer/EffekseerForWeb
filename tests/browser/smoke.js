@@ -18,6 +18,7 @@ const frames = Number(params.get("frames") || "30");
 const cameraMode = params.get("camera") || "";
 const alphaMode = params.get("alphaMode") || "";
 const compositeBackground = params.get("compositeBackground") || "";
+const allowWebGPUReadbackSkip = params.get("allowWebGPUReadbackSkip") === "1";
 const cameraPosition = { x: 20, y: 20, z: 20 };
 const cameraTarget = { x: 0, y: 0, z: 0 };
 const cameraFov = 30;
@@ -39,6 +40,8 @@ let webgpuStatus = backend === "webgpu"
       initialized: false,
       contextCreated: false,
       rendered: false,
+      readbackUnavailable: false,
+      readbackUnavailableReason: "",
       unavailableReason: "",
       failureStage: "",
     }
@@ -60,6 +63,10 @@ function markWebGPUUnavailable(reason) {
     webgpuStatus.failureStage = smokeStage;
   }
   throw new Error(reason);
+}
+
+function isNativeWebGPUReadbackFailure(error) {
+  return getErrorMessage(error).includes("Failed to read the native WebGPU frame buffer.");
 }
 
 async function requestSmokeWebGPUDevice() {
@@ -355,6 +362,7 @@ async function main() {
 
   let pixelStats;
   let readback = "";
+  let readbackUnavailable;
   smokeStage = "draw";
   if (backend === "webgpu" && mode === "external") {
     if (!webgpuDevice) {
@@ -372,9 +380,27 @@ async function main() {
       pixelStats = analyzeWebGLPixels(gl, renderCanvas.width, renderCanvas.height);
       readback = mode === "offscreen" ? "webgl-offscreen-readPixels" : "webgl-readPixels";
     } else if (typeof context.readFrameBuffer === "function") {
-      const frameBuffer = await context.readFrameBuffer();
-      pixelStats = analyzePixelRows(frameBuffer.data, frameBuffer.width, frameBuffer.height, frameBuffer.bytesPerRow, { ignoreAlpha: true });
-      readback = "webgpu-native-framebuffer";
+      try {
+        const frameBuffer = await context.readFrameBuffer();
+        pixelStats = analyzePixelRows(frameBuffer.data, frameBuffer.width, frameBuffer.height, frameBuffer.bytesPerRow, { ignoreAlpha: true });
+        readback = "webgpu-native-framebuffer";
+      } catch (error) {
+        if (!allowWebGPUReadbackSkip || !isNativeWebGPUReadbackFailure(error)) {
+          throw error;
+        }
+
+        readbackUnavailable = {
+          stage: "read-framebuffer",
+          message: getErrorMessage(error),
+        };
+        if (webgpuStatus) {
+          webgpuStatus.readbackUnavailable = true;
+          webgpuStatus.readbackUnavailableReason = readbackUnavailable.message;
+        }
+        const canvasStats = await analyzeCanvasPixels(canvas);
+        pixelStats = canvasStats && canvasStats.changedPixels > 0 ? canvasStats : undefined;
+        readback = pixelStats ? "canvas-image-bitmap" : "webgpu-native-framebuffer-unavailable";
+      }
     } else {
       const canvasStats = await analyzeCanvasPixels(canvas);
       pixelStats = canvasStats && canvasStats.changedPixels > 0 ? canvasStats : undefined;
@@ -398,6 +424,7 @@ async function main() {
     changedPixels: pixelStats?.changedPixels,
     readback,
     pixelStats,
+    readbackUnavailable,
     webgpuError: getLastWebGPUError(),
     webgpuErrors: getWebGPUErrors(),
     webgpuStatus,
