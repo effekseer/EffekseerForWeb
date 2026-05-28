@@ -137,7 +137,9 @@ High-level API:
 - `submit()`
 - `configureSurface(options)`
 
-In the high-level path, the Context manages the native surface, current texture, render pass, command buffer submission, and presentation. `drawToCanvas()` is a thin wrapper over `beginRenderPass()`, `drawCurrentFrame()`, `endRenderPass()`, and `submit()`.
+In the high-level path, the Context manages canvas presentation. DOM `HTMLCanvasElement` inputs use the native LLGI canvas surface, where `drawToCanvas()` is a thin wrapper over `beginRenderPass()`, `drawCurrentFrame()`, `endRenderPass()`, and `submit()`.
+
+`OffscreenCanvas` inputs use the same public `drawToCanvas()` API, but presentation is driven from JavaScript. The TypeScript layer acquires `GPUCanvasContext.getCurrentTexture()`, creates a render pass for that texture, and routes drawing through the external render-pass bridge. This avoids the native `#canvas` selector requirement and works in worker-style canvas ownership.
 
 Low-level API:
 
@@ -156,7 +158,7 @@ If omitted, the formats from context creation are used.
 
 The WebGPU native bridge uses the LLGI WebGPU backend.
 
-The high-level drawing path performs:
+The native HTML canvas drawing path performs:
 
 1. `PlatformWebGPU::NewFrame()`
 2. Begin an offscreen color/depth render pass
@@ -166,7 +168,7 @@ The high-level drawing path performs:
 6. Submit the command buffer
 7. Present
 
-The low-level drawing path uses the Emscripten WebGPU JavaScript object import bridge to convert a `GPURenderPassEncoder` into a native handle. LLGI `CommandListWebGPU` is extended with `BeginRenderPassWithPlatformPtr` and `EndRenderPassWithPlatformPtr` so an external render pass encoder can be used temporarily.
+The OffscreenCanvas path and the low-level drawing path use the Emscripten WebGPU JavaScript object import bridge to convert a `GPURenderPassEncoder` into a native handle. LLGI `CommandListWebGPU` is extended with `BeginRenderPassWithPlatformPtr` and `EndRenderPassWithPlatformPtr` so an external render pass encoder can be used temporarily.
 
 ## Resource Loading
 

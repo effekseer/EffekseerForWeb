@@ -136,7 +136,9 @@ WebGPU Context は 2 種類の描画経路を持つ。
 - `submit()`
 - `configureSurface(options)`
 
-高レイヤー API では Context が native surface、current texture、render pass、command buffer submit、present を管理する。`drawToCanvas()` は `beginRenderPass()`、`drawCurrentFrame()`、`endRenderPass()`、`submit()` の薄いラッパーとして扱う。
+高レイヤー API では Context が canvas presentation を管理する。DOM 上の `HTMLCanvasElement` は native LLGI canvas surface を使い、`drawToCanvas()` は `beginRenderPass()`、`drawCurrentFrame()`、`endRenderPass()`、`submit()` の薄いラッパーとして扱う。
+
+`OffscreenCanvas` は同じ `drawToCanvas()` API で扱うが、presentation は JavaScript 側で行う。TypeScript 層が `GPUCanvasContext.getCurrentTexture()` を取得し、その texture 向けの render pass を作成して、external render pass bridge 経由で描画する。これにより native 側の `#canvas` selector 要件を避け、worker 側に canvas ownership がある構成でも利用できるようにする。
 
 低レイヤー API:
 
@@ -155,7 +157,7 @@ WebGPU Context は 2 種類の描画経路を持つ。
 
 WebGPU native bridge は LLGI WebGPU backend を使う。
 
-高レイヤー描画では native 側が次を行う。
+native HTML canvas 描画では native 側が次を行う。
 
 1. `PlatformWebGPU::NewFrame()`
 2. offscreen color/depth render pass 開始
@@ -165,7 +167,7 @@ WebGPU native bridge は LLGI WebGPU backend を使う。
 6. command buffer submit
 7. present
 
-低レイヤー描画では、Emscripten WebGPU の JS object import を利用して `GPURenderPassEncoder` を native handle に変換する。LLGI の `CommandListWebGPU` に `BeginRenderPassWithPlatformPtr` / `EndRenderPassWithPlatformPtr` を追加し、外部 render pass encoder を一時的に使えるようにする。
+OffscreenCanvas 経路と低レイヤー描画では、Emscripten WebGPU の JS object import を利用して `GPURenderPassEncoder` を native handle に変換する。LLGI の `CommandListWebGPU` に `BeginRenderPassWithPlatformPtr` / `EndRenderPassWithPlatformPtr` を追加し、外部 render pass encoder を一時的に使えるようにする。
 
 ## Resource Loading
 
