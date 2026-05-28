@@ -62,8 +62,12 @@ http://localhost:8000/Sample/index.html
 ```
 
 `Sample/index.html` から WebGL と WebGPU のサンプルを選択できます。
+最小構成の WebGPU パスを確認する場合は `Sample/basic-webgpu.html` を開いてください。WebGPU backend を初期化し、`Resources/00_Basic/Laser01.efkefc` を読み込み、Three.js やアプリケーション側の render pass を使わずに `drawToCanvas()` で描画します。
 
 You can choose the WebGL or WebGPU sample from `Sample/index.html`.
+For the smallest WebGPU path, open `Sample/basic-webgpu.html`; it initializes the
+WebGPU backend, loads `Resources/00_Basic/Laser01.efkefc`, and draws with
+`drawToCanvas()` without Three.js or an application-owned render pass.
 
 `file://` から直接 HTML を開くと `.wasm` やエフェクト関連リソースの読み込みに失敗することがあります。ローカル確認でも HTTP サーバーを使ってください。
 
