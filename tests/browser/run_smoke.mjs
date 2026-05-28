@@ -535,6 +535,51 @@ async function assertCompositeExpectation(client, testCase, result) {
   };
 }
 
+function isUnavailableWebGPUSkip(testCase, options, result) {
+  return (
+    testCase.backend === "webgpu" &&
+    options.allowWebGPUSkip &&
+    result.webgpuStatus?.status === "unavailable"
+  );
+}
+
+function summarizeWebGPU(results) {
+  const webgpuResults = results.filter((result) => result.backend === "webgpu" || result.name?.startsWith("webgpu-"));
+  const summary = {
+    total: webgpuResults.length,
+    executed: 0,
+    skippedUnavailable: 0,
+    unavailable: 0,
+    executedFailed: 0,
+    unknown: 0,
+    cases: webgpuResults.map((result) => ({
+      name: result.name,
+      status: result.webgpuStatus?.status ?? "unknown",
+      skipped: Boolean(result.skipped),
+      stage: result.webgpuStatus?.failureStage || result.stage || "",
+      reason: result.skipReason || result.webgpuStatus?.unavailableReason || result.message || "",
+    })),
+  };
+
+  for (const result of webgpuResults) {
+    const status = result.webgpuStatus?.status;
+    if (status === "executed") {
+      summary.executed++;
+    } else if (status === "unavailable") {
+      summary.unavailable++;
+      if (result.skipped) {
+        summary.skippedUnavailable++;
+      }
+    } else if (status === "executed-failed") {
+      summary.executedFailed++;
+    } else {
+      summary.unknown++;
+    }
+  }
+
+  return summary;
+}
+
 async function runCase(browser, origin, testCase, options) {
   const url = new URL("/tests/browser/smoke.html", origin);
   url.searchParams.set("backend", testCase.backend);
@@ -576,10 +621,18 @@ async function runCase(browser, origin, testCase, options) {
     const result = await waitForSmokeResult(client, options.timeout);
     if (!result.ok) {
       const message = result.message ?? "unknown browser smoke failure";
-      if (testCase.backend === "webgpu" && options.allowWebGPUSkip && /WebGPU|navigator\.gpu|GPU/.test(message)) {
-        return { ...result, skipped: true, stderr };
+      if (isUnavailableWebGPUSkip(testCase, options, result)) {
+        return {
+          ...result,
+          skipped: true,
+          skipReason: result.webgpuStatus?.unavailableReason || message,
+          stderr,
+        };
       }
       throw new Error(`${testCase.name} failed: ${message}\n${result.stack ?? ""}\n${stderr}`);
+    }
+    if (testCase.backend === "webgpu" && result.webgpuStatus?.status !== "executed") {
+      throw new Error(`${testCase.name} did not report WebGPU execution.\n${JSON.stringify(result, null, 2)}`);
     }
     if (typeof result.changedPixels === "number" && result.changedPixels <= 0) {
       throw new Error(`${testCase.name} rendered no changed pixels.\n${JSON.stringify(result, null, 2)}`);
@@ -640,7 +693,7 @@ async function main() {
         ...(await runCase(browser, origin, testCase, options)),
       });
     }
-    console.log(JSON.stringify({ ok: true, browser, origin, results }, null, 2));
+    console.log(JSON.stringify({ ok: true, browser, origin, webgpuSummary: summarizeWebGPU(results), results }, null, 2));
   } finally {
     await new Promise((resolvePromise) => server.close(resolvePromise));
   }

@@ -28,9 +28,69 @@ if (compositeBackground) {
   canvas.style.background = "transparent";
 }
 
+let smokeStage = "startup";
+let webgpuStatus = backend === "webgpu"
+  ? {
+      requested: true,
+      status: "pending",
+      navigatorGpu: false,
+      adapter: false,
+      device: false,
+      initialized: false,
+      contextCreated: false,
+      rendered: false,
+      unavailableReason: "",
+      failureStage: "",
+    }
+  : undefined;
+
 function report(payload) {
   result.textContent = JSON.stringify(payload, null, 2);
   window.__effekseerSmokeResult = payload;
+}
+
+function getErrorMessage(error) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function markWebGPUUnavailable(reason) {
+  if (webgpuStatus) {
+    webgpuStatus.status = "unavailable";
+    webgpuStatus.unavailableReason = reason;
+    webgpuStatus.failureStage = smokeStage;
+  }
+  throw new Error(reason);
+}
+
+async function requestSmokeWebGPUDevice() {
+  smokeStage = "webgpu-navigator";
+  if (!navigator.gpu) {
+    markWebGPUUnavailable("navigator.gpu is not available.");
+  }
+  webgpuStatus.navigatorGpu = true;
+
+  smokeStage = "webgpu-adapter";
+  let adapter;
+  try {
+    adapter = await navigator.gpu.requestAdapter();
+  } catch (error) {
+    markWebGPUUnavailable(`Failed to request a WebGPU adapter: ${getErrorMessage(error)}`);
+  }
+  if (!adapter) {
+    markWebGPUUnavailable("Failed to request a WebGPU adapter.");
+  }
+  webgpuStatus.adapter = true;
+
+  smokeStage = "webgpu-device";
+  const optionalFeatures = ["float32-filterable", "texture-formats-tier2", "texture-compression-bc"];
+  const requiredFeatures = optionalFeatures.filter((feature) => adapter.features?.has?.(feature));
+  try {
+    const device = await adapter.requestDevice({ requiredFeatures });
+    webgpuStatus.device = true;
+    return device;
+  } catch (error) {
+    markWebGPUUnavailable(`Failed to request a WebGPU device: ${getErrorMessage(error)}`);
+  }
 }
 
 function encodeResourceUrl(url) {
@@ -222,20 +282,30 @@ async function main() {
     throw new Error("Missing ?effect= path.");
   }
 
+  let webgpuDevice = null;
+  if (backend === "webgpu") {
+    webgpuDevice = await requestSmokeWebGPUDevice();
+  }
+
+  smokeStage = "init-runtime";
   setLogEnabled(true);
   await initRuntime({
     backend,
     scriptPath: native,
     wasmPath: wasm,
+    device: webgpuDevice ?? undefined,
   });
+  if (webgpuStatus) {
+    webgpuStatus.initialized = true;
+  }
 
   let context;
   let gl = null;
   let renderCanvas = canvas;
-  let webgpuDevice = null;
   let colorFormat = "bgra8unorm";
   const depthFormat = "depth32float";
   if (backend === "webgl") {
+    smokeStage = "create-webgl-context";
     const contextAttributes = {
       alpha: true,
       depth: true,
@@ -258,8 +328,9 @@ async function main() {
       graphicsContext: gl,
     });
   } else {
-    if (!navigator.gpu) {
-      throw new Error("navigator.gpu is not available.");
+    smokeStage = "create-webgpu-context";
+    if (!webgpuDevice) {
+      throw new Error("WebGPU device is not available after preflight.");
     }
     colorFormat = navigator.gpu.getPreferredCanvasFormat();
     const canvasContext = canvas.getContext("webgpu");
@@ -267,20 +338,24 @@ async function main() {
       backend: "webgpu",
       canvas,
       canvasContext,
+      device: webgpuDevice,
       colorFormat,
       depthFormat,
       alphaMode: alphaMode || undefined,
       enablePremultipliedAlpha: alphaMode === "premultiplied" ? true : undefined,
     });
-    webgpuDevice = context.device;
+    webgpuStatus.contextCreated = true;
   }
 
+  smokeStage = "load-effect";
   const effect = await context.loadEffect(effectPath, { redirect: encodeResourceUrl });
+  smokeStage = "play-effect";
   const handle = context.play(effect, 0, 0, 0);
   const threeCamera = configureCamera(context, renderCanvas.width, renderCanvas.height);
 
   let pixelStats;
   let readback = "";
+  smokeStage = "draw";
   if (backend === "webgpu" && mode === "external") {
     if (!webgpuDevice) {
       throw new Error("WebGPU device is not available.");
@@ -306,11 +381,16 @@ async function main() {
       readback = pixelStats ? "canvas-image-bitmap" : "";
     }
   }
+  if (webgpuStatus) {
+    webgpuStatus.rendered = true;
+    webgpuStatus.status = "executed";
+  }
 
   const payload = {
     ok: true,
     backend,
     mode,
+    stage: smokeStage,
     camera: cameraMode || "default",
     threeCamera,
     frames,
@@ -320,6 +400,7 @@ async function main() {
     pixelStats,
     webgpuError: getLastWebGPUError(),
     webgpuErrors: getWebGPUErrors(),
+    webgpuStatus,
   };
 
   context.releaseEffect(effect);
@@ -328,13 +409,22 @@ async function main() {
 }
 
 main().catch((error) => {
+  if (webgpuStatus && webgpuStatus.status !== "unavailable") {
+    webgpuStatus.status = webgpuStatus.device ? "executed-failed" : "unavailable";
+    webgpuStatus.failureStage = smokeStage;
+    if (!webgpuStatus.device && !webgpuStatus.unavailableReason) {
+      webgpuStatus.unavailableReason = getErrorMessage(error);
+    }
+  }
   report({
     ok: false,
     backend,
     mode,
+    stage: smokeStage,
     message: error instanceof Error ? error.message : String(error),
     stack: error instanceof Error ? error.stack : undefined,
     webgpuError: getLastWebGPUError(),
     webgpuErrors: getWebGPUErrors(),
+    webgpuStatus,
   });
 });

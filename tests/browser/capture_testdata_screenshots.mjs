@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { extname, join, normalize, relative, resolve, sep } from "node:path";
+import { extname, isAbsolute, join, normalize, relative, resolve, sep } from "node:path";
 import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
@@ -438,6 +438,16 @@ function safeFileName(index, effectPath) {
   return `${String(index + 1).padStart(3, "0")}_${body}.png`;
 }
 
+async function prepareOutputDir(outDir) {
+  const outputRel = relative(root, outDir);
+  if (!outputRel || outputRel.startsWith("..") || isAbsolute(outputRel)) {
+    throw new Error(`Refusing to clean output directory outside the repository: ${outDir}`);
+  }
+
+  await rm(outDir, { recursive: true, force: true });
+  await mkdir(outDir, { recursive: true });
+}
+
 function htmlEscape(value) {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -584,7 +594,7 @@ async function main() {
   const options = parseArgs(process.argv.slice(2));
   const inputDir = resolve(root, options.input);
   const outDir = resolve(root, options.out || join("artifacts", "testdata-screenshots", `${options.backend}-${timestamp()}`));
-  await mkdir(outDir, { recursive: true });
+  await prepareOutputDir(outDir);
 
   const targets = options.preset
     ? resolvePresetTargets(options.preset)

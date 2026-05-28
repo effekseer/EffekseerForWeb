@@ -83,6 +83,12 @@ The CI suite covers:
 
 WebGL cases are required. WebGPU cases use `--allow-webgpu-skip` in CI, so they are skipped only when WebGPU is unavailable in the browser environment. If WebGPU is available, rendering pixel stats and validation error checks are required.
 
+The smoke output includes a top-level `webgpuSummary` and per-case `webgpuStatus` entries. Use these fields to distinguish CI environments where WebGPU did not run from real WebGPU failures:
+
+- `webgpuStatus.status: "executed"` means the case acquired `navigator.gpu`, adapter, device, initialized the runtime, created a context, and rendered.
+- `webgpuStatus.status: "unavailable"` means the case did not execute because `navigator.gpu`, adapter, or device acquisition failed. This is the only WebGPU status that `--allow-webgpu-skip` may skip.
+- `webgpuStatus.status: "executed-failed"` means WebGPU was available and the case started, but a runtime, render, readback, validation, or pixel-stat check failed. CI must fail in this state.
+
 When Chrome or Edge is not installed at a standard path, pass the browser path explicitly:
 
 ```sh
@@ -114,6 +120,8 @@ npm run test:screenshots:ci
 ```
 
 The CI command renders the WebGL samples from the `effekseer-for-webgl` preset, which follows EffekseerForWebGL's browser-compatible runtime screenshot coverage for `TestData/Effects`. It writes them to `test-results/testdata-screenshots/webgl-ci`, which is uploaded as the `browser-test-screenshots` workflow artifact.
+
+The screenshot command recreates the output directory before each capture run, so rerunning with the same `--out` path does not leave stale PNG files in the artifact. For safety, the output directory must resolve inside the repository.
 
 For a broader local capture, run:
 
