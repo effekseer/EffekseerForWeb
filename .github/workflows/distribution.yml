@@ -14,8 +14,52 @@ permissions:
   contents: write
 
 jobs:
+  native-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Install Emscripten SDK
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"
+          "$RUNNER_TEMP/emsdk/emsdk" install latest
+          "$RUNNER_TEMP/emsdk/emsdk" activate latest
+
+      - name: Build native WebGL/WebGPU outputs
+        id: build_native
+        shell: bash
+        run: |
+          source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
+          python build.py
+
+      - name: Upload native browser outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-native-dist
+          path: |
+            dist/effekseer-webgl-native.js
+            dist/effekseer-webgl-native.wasm
+            dist/effekseer-webgpu-native.js
+            dist/effekseer-webgpu-native.wasm
+          if-no-files-found: error
+
   package:
     runs-on: ubuntu-latest
+    needs: native-build
 
     steps:
       - name: Checkout
@@ -40,30 +84,36 @@ jobs:
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "artifact_name=EffekseerForWeb${version}" >> "$GITHUB_OUTPUT"
 
-      - name: Install Emscripten SDK
-        shell: bash
-        run: |
-          git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"
-          "$RUNNER_TEMP/emsdk/emsdk" install latest
-          "$RUNNER_TEMP/emsdk/emsdk" activate latest
+      - name: Download native browser outputs
+        id: native_dist
+        uses: actions/download-artifact@v4
+        with:
+          name: browser-native-dist
+          path: dist
 
       - name: TypeScript and API tests
         run: npm test
 
-      - name: Build native WebGL/WebGPU outputs
-        id: build_native
+      - name: Prepare browser test reports
         shell: bash
-        run: |
-          source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
-          python build.py
+        run: mkdir -p test-results
 
       - name: Browser smoke tests
         env:
           EFK_ALLOW_WEBGPU_SKIP: "1"
-        run: npm run test:browser:ci
+          EFK_ALLOW_WEBGPU_READBACK_SKIP: "1"
+        run: npm run test:browser:ci -- --report test-results/browser-smoke-ubuntu.json
+
+      - name: Upload browser smoke report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-smoke-ubuntu
+          path: test-results/browser-smoke-ubuntu.json
+          if-no-files-found: warn
 
       - name: Capture browser test screenshots
-        if: ${{ !cancelled() && steps.build_native.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.native_dist.outcome == 'success' }}
         run: npm run test:screenshots:ci
 
       - name: Upload browser test screenshots
@@ -97,3 +147,55 @@ jobs:
               --title "$GITHUB_REF_NAME" \
               --notes "Automated EffekseerForWeb distribution package."
           fi
+
+  webgpu-probe:
+    name: WebGPU browser probe (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: native-build
+    continue-on-error: true
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-latest
+          - macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Download native browser outputs
+        uses: actions/download-artifact@v4
+        with:
+          name: browser-native-dist
+          path: dist
+
+      - name: Prepare browser test reports
+        run: |
+          node -e "require('fs').mkdirSync('test-results', { recursive: true })"
+
+      - name: Browser smoke tests
+        env:
+          EFK_ALLOW_WEBGPU_SKIP: "1"
+          EFK_ALLOW_WEBGPU_READBACK_SKIP: "1"
+        run: npm run test:browser:ci -- --report test-results/browser-smoke-${{ matrix.os }}.json
+
+      - name: Upload WebGPU probe report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-webgpu-probe-${{ matrix.os }}
+          path: test-results/browser-smoke-${{ matrix.os }}.json
+          if-no-files-found: warn

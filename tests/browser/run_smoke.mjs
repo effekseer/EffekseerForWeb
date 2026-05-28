@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { extname, join, normalize, resolve, sep } from "node:path";
+import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
@@ -110,6 +110,7 @@ function parseArgs(argv) {
     timeout: 45000,
     caseNames: [],
     effect: "",
+    report: process.env.EFK_BROWSER_SMOKE_REPORT || "",
     allowWebGPUSkip: process.env.EFK_ALLOW_WEBGPU_SKIP === "1",
     allowWebGPUReadbackSkip: process.env.EFK_ALLOW_WEBGPU_READBACK_SKIP === "1",
   };
@@ -129,6 +130,8 @@ function parseArgs(argv) {
       options.caseNames.push(next());
     } else if (arg === "--effect") {
       options.effect = next();
+    } else if (arg === "--report") {
+      options.report = next();
     } else if (arg === "--allow-webgpu-skip") {
       options.allowWebGPUSkip = true;
     } else if (arg === "--allow-webgpu-readback-skip") {
@@ -139,6 +142,21 @@ function parseArgs(argv) {
   }
 
   return options;
+}
+
+async function writeSmokeReport(reportPath, report) {
+  if (!reportPath) {
+    return;
+  }
+
+  const outputPath = resolve(root, reportPath);
+  const rootWithSep = root.endsWith(sep) ? root : `${root}${sep}`;
+  if (outputPath !== root && !outputPath.startsWith(rootWithSep)) {
+    throw new Error(`Smoke report path must be inside the repository: ${reportPath}`);
+  }
+
+  await mkdir(dirname(outputPath), { recursive: true });
+  await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
 }
 
 function findBrowser(explicitPath) {
@@ -851,14 +869,16 @@ async function main() {
       }
     }
     const ok = results.every(isAcceptedResult);
-    console.log(JSON.stringify({
+    const report = {
       ok,
       browser,
       origin,
       failedCount: results.filter((result) => !isAcceptedResult(result)).length,
       webgpuSummary: summarizeWebGPU(results),
       results,
-    }, null, 2));
+    };
+    console.log(JSON.stringify(report, null, 2));
+    await writeSmokeReport(options.report, report);
     if (!ok) {
       process.exitCode = 1;
     }

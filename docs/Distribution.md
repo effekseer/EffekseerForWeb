@@ -56,9 +56,11 @@ Current excluded data:
 
 ## GitHub Actions
 
-`.github/workflows/distribution.yml` builds WebGL/WebGPU wasm outputs with Emscripten, runs browser smoke tests, captures browser-rendered WebGL screenshots, creates the distribution archives, and uploads the staged pre-archive distribution directory as a workflow artifact named `EffekseerForWeb<version>`, matching the EffekseerForWebGL distribution artifact style. GitHub Actions compresses that uploaded directory into the downloadable artifact zip.
+`.github/workflows/distribution.yml` first builds WebGL/WebGPU wasm outputs with Emscripten in the `native-build` job and uploads them as the `browser-native-dist` artifact. The `package` job downloads those native outputs, runs the required TypeScript/API and browser smoke tests on Ubuntu, captures browser-rendered WebGL screenshots, creates the distribution archives, and uploads the staged pre-archive distribution directory as a workflow artifact named `EffekseerForWeb<version>`, matching the EffekseerForWebGL distribution artifact style. GitHub Actions compresses that uploaded directory into the downloadable artifact zip.
 
-The workflow also uploads a `browser-test-screenshots` artifact. It contains PNG captures, `summary.json`, and `index.html` for quick visual inspection of the rendered TestData samples.
+The workflow also uploads a `browser-smoke-ubuntu` artifact containing the required Ubuntu smoke JSON report, and a `browser-test-screenshots` artifact containing PNG captures, `summary.json`, and `index.html` for quick visual inspection of the rendered TestData samples.
+
+The non-blocking `webgpu-probe` job runs the same browser smoke suite on `windows-latest` and `macos-latest` after downloading `browser-native-dist`. It uses `continue-on-error: true`, so it records whether those environments can execute WebGPU without making the main distribution CI fail. Each matrix entry uploads a `browser-webgpu-probe-<os>` JSON report.
 
 When the workflow runs for a tag starting with `v`, it also creates or updates a GitHub Release and uploads the archive files there.
 
@@ -68,6 +70,12 @@ CI runs:
 
 ```sh
 npm run test:browser:ci
+```
+
+CI passes `--report <path>` so the full JSON result is available as an artifact even when the log is noisy:
+
+```sh
+npm run test:browser:ci -- --report test-results/browser-smoke-ubuntu.json
 ```
 
 The CI suite covers:
