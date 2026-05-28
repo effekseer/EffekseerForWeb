@@ -60,7 +60,9 @@ Current excluded data:
 
 The workflow also uploads a `browser-smoke-ubuntu` artifact containing the required Ubuntu smoke JSON report, and a `browser-test-screenshots` artifact containing PNG captures, `summary.json`, and `index.html` for quick visual inspection of the rendered TestData samples.
 
-The non-blocking `webgpu-probe` job runs the same browser smoke suite on `windows-latest` and `macos-latest` after downloading `browser-native-dist`. It uses `continue-on-error: true`, so it records whether those environments can execute WebGPU without making the main distribution CI fail. Each matrix entry uploads a `browser-webgpu-probe-<os>` JSON report.
+The non-blocking `webgpu-macos` job runs the same browser smoke suite on `macos-latest` after downloading `browser-native-dist`. Its smoke step uses `continue-on-error: true`, so it records whether macOS can execute WebGPU without making the main distribution CI fail. It uploads a `browser-webgpu-smoke-macos` JSON report; if the runner exits before the smoke report is written, the workflow writes a small fatal probe report instead.
+
+The same macOS job also runs `npm run test:screenshots:webgpu:ci` and uploads the rendered WebGPU PNGs, `summary.json`, and `index.html` as `browser-webgpu-screenshots-macos`. Windows is currently not part of this probe flow because the hosted Windows environment has failed WebGPU execution in CI.
 
 When the workflow runs for a tag starting with `v`, it also creates or updates a GitHub Release and uploads the archive files there.
 
@@ -77,6 +79,14 @@ CI passes `--report <path>` so the full JSON result is available as an artifact 
 ```sh
 npm run test:browser:ci -- --report test-results/browser-smoke-ubuntu.json
 ```
+
+The macOS WebGPU screenshot job runs:
+
+```sh
+npm run test:screenshots:webgpu:ci
+```
+
+That command captures the `webgpu-ci` preset through the WebGPU canvas path and writes to `test-results/testdata-screenshots/webgpu-ci`.
 
 The CI suite covers:
 
@@ -100,6 +110,8 @@ The smoke output includes a top-level `webgpuSummary` and per-case `webgpuStatus
 - `webgpuSummary.readbackUnavailable` counts WebGPU canvas cases where rendering completed but native canvas framebuffer readback was unavailable. This is allowed only with `--allow-webgpu-readback-skip`; inspect the per-case `readbackUnavailable.message` for the reason.
 
 When a smoke case fails, the runner still prints the full JSON summary before exiting with a non-zero status. Check `webgpuSummary.executedFailed` and the failing case's `webgpuStatus.failureStage` first.
+
+Chrome can print platform stderr messages even when the smoke result is successful. For example, macOS hosted runners may log `ERROR:sandbox/mac/system_services.cc` while the JSON still reports `ok: true` and `webgpuSummary.executed: 5`; treat the JSON result as authoritative.
 
 When Chrome or Edge is not installed at a standard path, pass the browser path explicitly:
 

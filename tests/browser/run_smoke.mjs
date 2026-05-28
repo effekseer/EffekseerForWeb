@@ -735,6 +735,27 @@ function isAcceptedResult(result) {
   return result.ok || result.skipped;
 }
 
+function makeFatalReport(error, options = {}) {
+  return {
+    ok: false,
+    fatal: true,
+    browser: options.browser || "",
+    origin: "",
+    failedCount: 1,
+    webgpuSummary: summarizeWebGPU([]),
+    results: [
+      {
+        name: "runner",
+        ok: false,
+        failed: true,
+        stage: "runner",
+        message: error instanceof Error ? error.message : String(error),
+        error: errorMessage(error),
+      },
+    ],
+  };
+}
+
 async function runCase(browser, origin, testCase, options) {
   const url = new URL("/tests/browser/smoke.html", origin);
   url.searchParams.set("backend", testCase.backend);
@@ -887,7 +908,14 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.stack || error.message : String(error));
+main().catch(async (error) => {
+  const message = error instanceof Error ? error.stack || error.message : String(error);
+  console.error(message);
+  try {
+    const options = parseArgs(process.argv.slice(2));
+    await writeSmokeReport(options.report, makeFatalReport(error, options));
+  } catch {
+    // Keep the original failure visible even if argument parsing or report writing fails.
+  }
   process.exitCode = 1;
 });

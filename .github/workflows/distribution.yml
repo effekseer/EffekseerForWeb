@@ -148,18 +148,12 @@ jobs:
               --notes "Automated EffekseerForWeb distribution package."
           fi
 
-  webgpu-probe:
-    name: WebGPU browser probe (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+  webgpu-macos:
+    name: WebGPU browser smoke and screenshots (macOS)
+    runs-on: macos-latest
     needs: native-build
     continue-on-error: true
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - windows-latest
-          - macos-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -187,15 +181,35 @@ jobs:
           node -e "require('fs').mkdirSync('test-results', { recursive: true })"
 
       - name: Browser smoke tests
+        id: browser_smoke
+        continue-on-error: true
         env:
           EFK_ALLOW_WEBGPU_SKIP: "1"
           EFK_ALLOW_WEBGPU_READBACK_SKIP: "1"
-        run: npm run test:browser:ci -- --report test-results/browser-smoke-${{ matrix.os }}.json
+        run: npm run test:browser:ci -- --report test-results/browser-smoke-macos-latest.json
+
+      - name: Write missing WebGPU probe report
+        if: ${{ !cancelled() }}
+        run: |
+          node -e "const fs = require('fs'); const path = 'test-results/browser-smoke-macos-latest.json'; if (!fs.existsSync(path)) { fs.mkdirSync('test-results', { recursive: true }); fs.writeFileSync(path, JSON.stringify({ ok: false, fatal: true, probe: true, os: 'macos-latest', smokeStepOutcome: '${{ steps.browser_smoke.outcome }}', message: 'Browser smoke step ended before writing a report.', webgpuSummary: { total: 0, executed: 0, skippedUnavailable: 0, unavailable: 0, canvasUnavailable: 0, executedFailed: 0, readbackUnavailable: 0, unknown: 0, cases: [] }, results: [] }, null, 2) + '\n'); }"
 
       - name: Upload WebGPU probe report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
-          name: browser-webgpu-probe-${{ matrix.os }}
-          path: test-results/browser-smoke-${{ matrix.os }}.json
+          name: browser-webgpu-smoke-macos
+          path: test-results/browser-smoke-macos-latest.json
+          if-no-files-found: warn
+
+      - name: Capture WebGPU screenshots
+        id: webgpu_screenshots
+        continue-on-error: true
+        run: npm run test:screenshots:webgpu:ci
+
+      - name: Upload WebGPU screenshots
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-webgpu-screenshots-macos
+          path: test-results/testdata-screenshots/webgpu-ci
           if-no-files-found: warn

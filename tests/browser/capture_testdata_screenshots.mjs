@@ -9,6 +9,10 @@ import { fileURLToPath } from "node:url";
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const renderableExtensions = new Set([".efk", ".efkefc"]);
 const targetPresets = {
+  "webgpu-ci": [
+    { effect: "TestData/Effects/10/Sprite_Parameters1.efk", frames: 30 },
+    { effect: "TestData/Effects/16/AlphaBlendTexture01.efkefc", frames: 30 },
+  ],
   "effekseer-for-webgl": [
     { effect: "TestData/Effects/10/SimpleLaser.efk", frames: 30 },
     { effect: "TestData/Effects/10/FCurve_Parameters1.efk", frames: 30 },
@@ -347,13 +351,23 @@ class CDPClient {
 async function waitForSmokeResult(client, timeout) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
-    const evaluated = await client.send("Runtime.evaluate", {
-      expression: "window.__effekseerSmokeResult || null",
-      returnByValue: true,
-    });
-    const value = evaluated?.result?.value;
-    if (value) {
-      return value;
+    try {
+      const evaluated = await client.send("Runtime.evaluate", {
+        expression: "window.__effekseerSmokeResult || null",
+        returnByValue: true,
+      });
+      const value = evaluated?.result?.value;
+      if (value) {
+        return value;
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (
+        !message.includes("Cannot find default execution context") &&
+        !message.includes("Execution context was destroyed")
+      ) {
+        throw error;
+      }
     }
     await delay(250);
   }
