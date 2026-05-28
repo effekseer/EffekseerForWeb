@@ -231,6 +231,7 @@ async function main() {
 
   let context;
   let gl = null;
+  let renderCanvas = canvas;
   let webgpuDevice = null;
   let colorFormat = "bgra8unorm";
   const depthFormat = "depth32float";
@@ -242,7 +243,13 @@ async function main() {
       antialias: false,
       preserveDrawingBuffer: true,
     };
-    gl = canvas.getContext("webgl2", contextAttributes) || canvas.getContext("webgl", contextAttributes);
+    if (mode === "offscreen") {
+      if (typeof OffscreenCanvas !== "function") {
+        throw new Error("OffscreenCanvas is not available.");
+      }
+      renderCanvas = new OffscreenCanvas(canvas.width, canvas.height);
+    }
+    gl = renderCanvas.getContext("webgl2", contextAttributes) || renderCanvas.getContext("webgl", contextAttributes);
     if (!gl) {
       throw new Error("Failed to create WebGL context.");
     }
@@ -270,7 +277,7 @@ async function main() {
 
   const effect = await context.loadEffect(effectPath, { redirect: encodeResourceUrl });
   const handle = context.play(effect, 0, 0, 0);
-  const threeCamera = configureCamera(context, canvas.width, canvas.height);
+  const threeCamera = configureCamera(context, renderCanvas.width, renderCanvas.height);
 
   let pixelStats;
   let readback = "";
@@ -287,8 +294,8 @@ async function main() {
       await new Promise((resolve) => requestAnimationFrame(resolve));
     }
     if (gl) {
-      pixelStats = analyzeWebGLPixels(gl, canvas.width, canvas.height);
-      readback = "webgl-readPixels";
+      pixelStats = analyzeWebGLPixels(gl, renderCanvas.width, renderCanvas.height);
+      readback = mode === "offscreen" ? "webgl-offscreen-readPixels" : "webgl-readPixels";
     } else if (typeof context.readFrameBuffer === "function") {
       const frameBuffer = await context.readFrameBuffer();
       pixelStats = analyzePixelRows(frameBuffer.data, frameBuffer.width, frameBuffer.height, frameBuffer.bytesPerRow, { ignoreAlpha: true });

@@ -39,6 +39,31 @@ http://localhost:8000/Sample/webgpu.html
 
 Browsers generally cannot load `.wasm` and effect resources correctly from `file://`, so use HTTP even for local testing.
 
+## Backend Usage
+
+WebGL and WebGPU differ in runtime initialization and in the rendering target passed to `createContext()`. Loading, playing, updating, and normal canvas drawing follow the same flow.
+
+| Purpose | WebGL | WebGPU |
+| --- | --- | --- |
+| Runtime | `backend: "webgl"` with `effekseer-webgl.js` / `.wasm` | `backend: "webgpu"` with `effekseer-webgpu.js` / `.wasm` and `GPUDevice` |
+| Context target | `graphicsContext` from `canvas.getContext("webgl2")`, `webgl`, or `OffscreenCanvas` | `canvasContext` from `canvas.getContext("webgpu")` or `OffscreenCanvas`, plus `device` |
+| Normal draw loop | `context.update(1); context.draw();` | `context.update(1); context.draw();` |
+| App-owned render pass | Not provided | `context.drawToRenderPass(renderPassEncoder, options)` |
+
+The normal playback code is backend-independent.
+
+```js
+const effect = await context.loadEffect("./Resources/00_Basic/Laser01.efkefc");
+context.play(effect, 0, 0, 0);
+
+function render() {
+  requestAnimationFrame(render);
+  context.update(1);
+  context.draw();
+}
+render();
+```
+
 ## Minimal WebGL Usage
 
 ```html
@@ -76,6 +101,8 @@ Browsers generally cannot load `.wasm` and effect resources correctly from `file
 ```
 
 See `Sample/webgl.js` for a complete Three.js render loop. The sample uses the bundled `Sample/three.min.js`.
+
+WebGL also accepts a WebGL context created from `OffscreenCanvas` through the same `graphicsContext` option. In a Worker, provide the native module factory through `moduleFactory` instead of using `scriptPath`, which depends on document script loading.
 
 When you render with a Three.js camera, call `setCameraFromThree(camera)`. The helper calls `camera.updateMatrixWorld()` by default, copies `camera.projectionMatrix.elements` and `camera.matrixWorldInverse.elements` into Effekseer, and works for both WebGL and WebGPU contexts. Pass `{ updateMatrixWorld: false }` if your render loop already updated the camera.
 
@@ -117,7 +144,7 @@ context.setCameraFromThree(camera);
   function render() {
     requestAnimationFrame(render);
     context.update(1);
-    context.drawToCanvas();
+    context.draw();
   }
   render();
 </script>
@@ -126,6 +153,8 @@ context.setCameraFromThree(camera);
 Use `drawToRenderPass(renderPassEncoder, options)` when your application fully owns the WebGPU render pass. In that mode, your application begins and ends the render pass and submits the command buffer.
 
 The bundled `Sample/webgpu.html` and `Sample/webgpu.js` use this external render pass path for the WebGPU sample.
+
+WebGPU also accepts a `webgpu` context created from `OffscreenCanvas` through the same `canvasContext` option. The normal `draw()` path renders to that `GPUCanvasContext` current texture. In a Worker, provide the native module factory through `moduleFactory`.
 
 ## Audio
 

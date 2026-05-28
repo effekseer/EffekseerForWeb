@@ -73,6 +73,7 @@ npm run test:browser:ci
 The CI suite covers:
 
 - `webgl-basic`
+- `webgl-offscreen`
 - `webgl-material`
 - `webgpu-canvas`
 - `webgpu-alpha-premultiplied`

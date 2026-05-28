@@ -16,7 +16,7 @@
     "package:distribution:build": "python build.py && python scripts/create_distribution_package.py",
     "test": "npm run build:ts && node --test tests/*.test.mjs",
     "test:browser": "npm run build:ts && node tests/browser/run_smoke.mjs",
-    "test:browser:ci": "npm run build:ts && node tests/browser/run_smoke.mjs --case webgl-basic --case webgl-material --case webgpu-canvas --case webgpu-alpha-premultiplied --case webgpu-alpha-opaque --case webgpu-external --case webgpu-texture --allow-webgpu-skip",
+    "test:browser:ci": "npm run build:ts && node tests/browser/run_smoke.mjs --case webgl-basic --case webgl-offscreen --case webgl-material --case webgpu-canvas --case webgpu-alpha-premultiplied --case webgpu-alpha-opaque --case webgpu-external --case webgpu-texture --allow-webgpu-skip",
     "test:screenshots": "npm run build:ts && node tests/browser/capture_testdata_screenshots.mjs --backend webgl",
     "test:screenshots:ci": "npm run build:ts && node tests/browser/capture_testdata_screenshots.mjs --backend webgl --preset effekseer-for-webgl --out test-results/testdata-screenshots/webgl-ci"
   },

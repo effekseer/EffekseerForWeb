@@ -119,6 +119,7 @@ The WebGL context follows the existing EffekseerForWebGL approach.
 Requirements:
 
 - Register the user-provided `WebGLRenderingContext` or `WebGL2RenderingContext` with `Module.GL.registerContext`.
+- `OffscreenCanvas` is supported by passing its WebGL context through the same `graphicsContext` option. The runtime does not require a DOM canvas for WebGL drawing.
 - Call `makeContextCurrent()` before drawing.
 - Let the native WebGL texture loader call `Module._loadImage()`, with TypeScript returning a `TexImageSource`.
 - Provide background capture/reset, state restoration, and VAO support query APIs.
@@ -247,7 +248,8 @@ Initial verification should proceed in this order:
 4. WebGPU native build
 5. Browser smoke tests
 6. Resource loading tests for images, audio, packages, and materials
-7. WebGPU high-level canvas presentation test
-8. WebGPU low-level external render pass test
+7. WebGL OffscreenCanvas smoke test
+8. WebGPU high-level canvas presentation test
+9. WebGPU low-level external render pass test
 
 WebGL and WebGPU output do not need to be pixel-identical. The acceptance criteria are changed pixels, non-empty rendering, and no validation errors. Browser smoke tests are run through `tests/browser/smoke.html` and `tests/browser/run_smoke.mjs`; the WebGPU low-level path is selected with `mode=external`. Real assets come from the `TestData` submodule.

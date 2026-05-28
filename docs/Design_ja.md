@@ -118,6 +118,7 @@ WebGL Context は既存 EffekseerForWebGL の方針を踏襲する。
 主な仕様:
 
 - 利用者が渡した `WebGLRenderingContext` / `WebGL2RenderingContext` を Emscripten `Module.GL.registerContext` に登録する。
+- `OffscreenCanvas` は、その WebGL context を同じ `graphicsContext` option で渡すことで利用できる。WebGL 描画では DOM canvas を必須にしない。
 - draw 前に `makeContextCurrent()` を呼ぶ。
 - texture upload は native WebGL texture loader から `Module._loadImage()` を呼び、TypeScript が返す `TexImageSource` を使う。
 - 背景キャプチャ、state restoration、VAO support query を提供する。
@@ -246,7 +247,8 @@ WebGPU validation error は module 側で最後の message を保持し、`getLa
 4. WebGPU native build
 5. ブラウザ smoke test
 6. 画像、音声、package、material のリソースロードテスト
-7. WebGPU 高レイヤー canvas presentation test
-8. WebGPU 低レイヤー external render pass test
+7. WebGL OffscreenCanvas smoke test
+8. WebGPU 高レイヤー canvas presentation test
+9. WebGPU 低レイヤー external render pass test
 
 WebGL と WebGPU の描画結果は完全一致ではなく、主要ピクセル、非空描画、validation error の有無を基準にする。ブラウザ smoke test は `tests/browser/smoke.html` と `tests/browser/run_smoke.mjs` で実行し、WebGPU 低レイヤー経路は `mode=external` で確認する。実 asset は `TestData` submodule を使う。
