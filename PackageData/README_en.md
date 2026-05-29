@@ -35,6 +35,7 @@ You can also open each sample directly:
 ```text
 http://localhost:8000/Sample/webgl.html
 http://localhost:8000/Sample/basic-webgpu.html
+http://localhost:8000/Sample/basic-threejs-webgpu.html
 http://localhost:8000/Sample/webgpu.html
 ```
 
@@ -43,6 +44,8 @@ the WebGPU backend, loads `Resources/00_Basic/Laser01.efkefc`, plays it on the
 canvas, and uses `drawToCanvas()` without Three.js or an application-owned render
 pass. Use `Sample/webgpu.html` when you want the larger Three.js/external render
 pass sample.
+Use `Sample/basic-threejs-webgpu.html` when you want the smallest Three.js camera
+plus WebGPU external render pass example.
 
 Browsers generally cannot load `.wasm` and effect resources correctly from `file://`, so use HTTP even for local testing.
 
@@ -162,6 +165,9 @@ Use `drawToRenderPass(renderPassEncoder, options)` when your application fully o
 The bundled `Sample/webgpu.html` and `Sample/webgpu.js` use this external render pass path for the WebGPU sample.
 The bundled `Sample/basic-webgpu.html` and `Sample/basic-webgpu.js` show the
 minimal `drawToCanvas()` path.
+The bundled `Sample/basic-threejs-webgpu.html` and
+`Sample/basic-threejs-webgpu.js` show the same external render pass path with a
+minimal `THREE.PerspectiveCamera` setup.
 
 WebGPU also accepts a `webgpu` context created from `OffscreenCanvas` through the same `canvasContext` option. The normal `draw()` path renders to that `GPUCanvasContext` current texture. In a Worker, provide the native module factory through `moduleFactory`.
 

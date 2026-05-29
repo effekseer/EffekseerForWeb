@@ -35,10 +35,12 @@ http://localhost:8000/Sample/index.html
 ```text
 http://localhost:8000/Sample/webgl.html
 http://localhost:8000/Sample/basic-webgpu.html
+http://localhost:8000/Sample/basic-threejs-webgpu.html
 http://localhost:8000/Sample/webgpu.html
 ```
 
 `Sample/basic-webgpu.html` は最小構成の WebGPU デモです。WebGPU backend を初期化し、`Resources/00_Basic/Laser01.efkefc` を読み込んで canvas に再生し、Three.js やアプリケーション側の render pass を使わずに `drawToCanvas()` で描画します。より大きい Three.js / external render pass の例は `Sample/webgpu.html` を参照してください。
+最小構成の Three.js 連携を確認する場合は `Sample/basic-threejs-webgpu.html` を参照してください。`THREE.PerspectiveCamera` を使い、アプリケーション側の WebGPU render pass に Effekseer を描画します。
 
 多くのブラウザでは `file://` から `.wasm` やエフェクトの関連リソースを正しく読み込めません。ローカルで確認する場合も HTTP サーバーを使ってください。
 
@@ -157,6 +159,7 @@ WebGPU の描画先をアプリケーション側の render pass で完全に管
 
 配布パッケージの `Sample/webgpu.html` と `Sample/webgpu.js` は、この外部 render pass を使った WebGPU サンプルです。
 配布パッケージの `Sample/basic-webgpu.html` と `Sample/basic-webgpu.js` は、最小構成の `drawToCanvas()` パスを示します。
+配布パッケージの `Sample/basic-threejs-webgpu.html` と `Sample/basic-threejs-webgpu.js` は、最小構成の `THREE.PerspectiveCamera` と外部 render pass の連携を示します。
 
 WebGPU でも `OffscreenCanvas` から `webgpu` context を作成し、同じ `canvasContext` option で渡せます。通常の `draw()` はその `GPUCanvasContext` の current texture へ描画します。Worker 内では `moduleFactory` で native module factory を渡してください。
 

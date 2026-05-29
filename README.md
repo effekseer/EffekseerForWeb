@@ -68,6 +68,9 @@ You can choose the WebGL or WebGPU sample from `Sample/index.html`.
 For the smallest WebGPU path, open `Sample/basic-webgpu.html`; it initializes the
 WebGPU backend, loads `Resources/00_Basic/Laser01.efkefc`, and draws with
 `drawToCanvas()` without Three.js or an application-owned render pass.
+For a minimal Three.js integration path, open `Sample/basic-threejs-webgpu.html`;
+it drives the Effekseer camera from `THREE.PerspectiveCamera` and records into an
+application-owned WebGPU render pass.
 
 `file://` から直接 HTML を開くと `.wasm` やエフェクト関連リソースの読み込みに失敗することがあります。ローカル確認でも HTTP サーバーを使ってください。
 
