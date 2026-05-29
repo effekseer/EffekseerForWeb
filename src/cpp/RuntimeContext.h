@@ -24,6 +24,7 @@
 #endif
 
 #if defined(EFFEKSEER_FOR_WEB_WEBGPU)
+#include <EffekseerRendererWebGPU/EffekseerMaterialCompilerWebGPU.h>
 #include "EffekseerRendererWebGPU.h"
 #include <EffekseerRendererLLGI/Common.h>
 #include <EffekseerRendererLLGI/EffekseerRendererLLGI.Renderer.h>
@@ -530,6 +531,12 @@ public:
 		if (renderer == nullptr)
 		{
 			return false;
+		}
+
+		auto rendererImpl = renderer.DownCast<EffekseerRendererLLGI::RendererImplemented>();
+		if (rendererImpl != nullptr && rendererImpl->materialCompiler_ == nullptr)
+		{
+			rendererImpl->materialCompiler_ = new Effekseer::MaterialCompilerWebGPU();
 		}
 
 		webgpuEffekseerMemoryPool = EffekseerRenderer::CreateSingleFrameMemoryPool(renderer->GetGraphicsDevice());
