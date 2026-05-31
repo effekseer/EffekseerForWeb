@@ -85,6 +85,7 @@ function parseArgs(argv) {
     input: "TestData",
     out: "",
     preset: "",
+    background: "distortion-grid",
     continueOnError: true,
     allowFailedCaptures: process.env.EFK_ALLOW_FAILED_SCREENSHOTS === "1",
   };
@@ -110,6 +111,8 @@ function parseArgs(argv) {
       options.out = next();
     } else if (arg === "--preset") {
       options.preset = next();
+    } else if (arg === "--background") {
+      options.background = next();
     } else if (arg === "--fail-fast") {
       options.continueOnError = false;
     } else if (arg === "--allow-failed-captures") {
@@ -140,6 +143,7 @@ function resolvePresetTargets(name) {
   return preset.map((target) => ({
     path: resolve(root, target.effect),
     frames: target.frames,
+    background: target.background,
   }));
 }
 
@@ -477,13 +481,14 @@ function makeIndexHtml(summary) {
     const stats = result.pixelStats
       ? `${result.pixelStats.changedPixels ?? ""} px, ${result.pixelStats.colorBuckets ?? ""} buckets`
       : "no pixel stats";
+    const background = result.background ? ` / background=${result.background}` : "";
     const image = result.screenshot
       ? `<img src="${htmlEscape(result.screenshot)}" alt="${htmlEscape(result.effect)}" loading="lazy">`
       : `<div class="missing">No screenshot</div>`;
     return `<article class="${status}">
       ${image}
       <h2>${htmlEscape(result.effect)}</h2>
-      <p>${htmlEscape(status)} / frames=${result.frames ?? summary.frames} / ${htmlEscape(stats)}</p>
+      <p>${htmlEscape(status)} / frames=${result.frames ?? summary.frames} / ${htmlEscape(stats)}${htmlEscape(background)}</p>
       ${result.message ? `<pre>${htmlEscape(result.message)}</pre>` : ""}
     </article>`;
   }).join("\n");
@@ -512,7 +517,7 @@ function makeIndexHtml(summary) {
 <body>
   <header>
     <h1>Effekseer TestData Screenshots</h1>
-    <div class="meta">backend=${htmlEscape(summary.backend)}, mode=${htmlEscape(summary.mode)}, preset=${htmlEscape(summary.preset || "custom")}, defaultFrames=${summary.frames}, total=${summary.total}, ok=${summary.okCount}, failed=${summary.failedCount}</div>
+    <div class="meta">backend=${htmlEscape(summary.backend)}, mode=${htmlEscape(summary.mode)}, preset=${htmlEscape(summary.preset || "custom")}, background=${htmlEscape(summary.background || "none")}, defaultFrames=${summary.frames}, total=${summary.total}, ok=${summary.okCount}, failed=${summary.failedCount}</div>
   </header>
   <main>
     ${cards}
@@ -551,11 +556,15 @@ async function runCapture(browser, origin, targets, options, outDir) {
       const target = targets[i];
       const effectPath = relative(root, target.path).replace(/\\/g, "/");
       const frameCount = target.frames ?? options.frames;
+      const background = target.background ?? options.background;
       const url = new URL("/tests/browser/smoke.html", origin);
       url.searchParams.set("backend", options.backend);
       url.searchParams.set("mode", options.mode);
       url.searchParams.set("effect", `/${effectPath}`);
       url.searchParams.set("frames", String(frameCount));
+      if (background && background !== "none") {
+        url.searchParams.set("testBackground", background);
+      }
       if (options.backend === "webgpu") {
         url.searchParams.set("allowWebGPUReadbackSkip", "1");
       }
@@ -565,6 +574,7 @@ async function runCapture(browser, origin, targets, options, outDir) {
         frames: frameCount,
         ok: false,
         screenshot: "",
+        background: background === "none" ? "" : background,
         pixelStats: null,
         message: "",
       };
@@ -636,6 +646,7 @@ async function main() {
       frames: options.frames,
       input: options.preset || relative(root, inputDir).replace(/\\/g, "/"),
       preset: options.preset,
+      background: options.background,
       output: relative(root, outDir).replace(/\\/g, "/"),
       total: targets.length,
       okCount,

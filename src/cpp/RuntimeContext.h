@@ -278,6 +278,8 @@ public:
 	LLGI::Buffer* copyVB = nullptr;
 	LLGI::Buffer* copyIB = nullptr;
 	LLGI::PipelineState* copyPipeline = nullptr;
+	LLGI::Texture* webgpuBackgroundTexture = nullptr;
+	LLGI::PipelineState* webgpuBackgroundPipeline = nullptr;
 	LLGI::TextureFormatType copyScreenFormat = LLGI::TextureFormatType::R8G8B8A8_UNORM;
 #endif
 
@@ -460,6 +462,99 @@ public:
 		return true;
 	}
 
+	bool EnsureWebGPUBackgroundPipeline()
+	{
+		if (webgpuBackgroundPipeline != nullptr)
+		{
+			return true;
+		}
+		if (webgpuRenderPass == nullptr || copyVS == nullptr || copyPS == nullptr)
+		{
+			return false;
+		}
+
+		auto renderPassPipeline = webgpuGraphics->CreateRenderPassPipelineState(webgpuRenderPass);
+		webgpuBackgroundPipeline = webgpuGraphics->CreatePiplineState();
+		webgpuBackgroundPipeline->VertexLayouts[0] = LLGI::VertexLayoutFormat::R32G32B32_FLOAT;
+		webgpuBackgroundPipeline->VertexLayouts[1] = LLGI::VertexLayoutFormat::R32G32_FLOAT;
+		webgpuBackgroundPipeline->VertexLayouts[2] = LLGI::VertexLayoutFormat::R8G8B8A8_UNORM;
+		webgpuBackgroundPipeline->VertexLayoutNames[0] = "POSITION";
+		webgpuBackgroundPipeline->VertexLayoutNames[1] = "UV";
+		webgpuBackgroundPipeline->VertexLayoutNames[2] = "COLOR";
+		webgpuBackgroundPipeline->VertexLayoutCount = 3;
+		webgpuBackgroundPipeline->IsDepthTestEnabled = false;
+		webgpuBackgroundPipeline->IsDepthWriteEnabled = false;
+		webgpuBackgroundPipeline->IsBlendEnabled = false;
+		webgpuBackgroundPipeline->Culling = LLGI::CullingMode::DoubleSide;
+		webgpuBackgroundPipeline->SetShader(LLGI::ShaderStageType::Vertex, copyVS);
+		webgpuBackgroundPipeline->SetShader(LLGI::ShaderStageType::Pixel, copyPS);
+		webgpuBackgroundPipeline->SetRenderPassPipelineState(renderPassPipeline);
+		webgpuBackgroundPipeline->Compile();
+		LLGI::SafeRelease(renderPassPipeline);
+		return webgpuBackgroundPipeline != nullptr;
+	}
+
+	void DrawWebGPUBackground()
+	{
+		if (webgpuBackgroundTexture == nullptr || webgpuCommandList == nullptr)
+		{
+			return;
+		}
+		if (!EnsureWebGPUBackgroundPipeline())
+		{
+			return;
+		}
+
+		webgpuCommandList->SetVertexBuffer(copyVB, sizeof(WebGPUCopyVertex), 0);
+		webgpuCommandList->SetIndexBuffer(copyIB, 2);
+		webgpuCommandList->SetPipelineState(webgpuBackgroundPipeline);
+		webgpuCommandList->SetTexture(webgpuBackgroundTexture, LLGI::TextureWrapMode::Clamp, LLGI::TextureMinMagFilter::Linear, 0);
+		webgpuCommandList->Draw(2);
+	}
+
+	bool SetWebGPUBackgroundImage(const uint8_t* data, int32_t dataSize, int32_t width, int32_t height)
+	{
+		if (data == nullptr || dataSize < width * height * 4 || width <= 0 || height <= 0 || webgpuGraphics == nullptr)
+		{
+			return false;
+		}
+
+		const auto needsTexture = webgpuBackgroundTexture == nullptr ||
+								  webgpuBackgroundTexture->GetSizeAs2D().X != width ||
+								  webgpuBackgroundTexture->GetSizeAs2D().Y != height;
+		if (needsTexture)
+		{
+			LLGI::SafeRelease(webgpuBackgroundTexture);
+			LLGI::TextureParameter textureParam;
+			textureParam.Dimension = 2;
+			textureParam.Format = LLGI::TextureFormatType::R8G8B8A8_UNORM;
+			textureParam.MipLevelCount = 1;
+			textureParam.SampleCount = 1;
+			textureParam.Size = LLGI::Vec3I(width, height, 1);
+			webgpuBackgroundTexture = webgpuGraphics->CreateTexture(textureParam);
+			if (webgpuBackgroundTexture == nullptr)
+			{
+				return false;
+			}
+		}
+
+		auto textureData = static_cast<uint8_t*>(webgpuBackgroundTexture->Lock());
+		if (textureData == nullptr)
+		{
+			return false;
+		}
+		std::memcpy(textureData, data, static_cast<size_t>(width) * static_cast<size_t>(height) * 4);
+		webgpuBackgroundTexture->Unlock();
+
+		auto rendererImpl = renderer.DownCast<EffekseerRendererLLGI::RendererImplemented>();
+		if (rendererImpl != nullptr)
+		{
+			rendererImpl->SetBackgroundInternal(webgpuBackgroundTexture);
+			rendererImpl->SetBackgroundTextureUVStyle(EffekseerRenderer::UVStyle::Normal);
+		}
+		return true;
+	}
+
 	bool InitWebGPU(
 		int32_t instanceMaxCount,
 		int32_t squareMaxCount,
@@ -582,6 +677,7 @@ public:
 
 		webgpuCommandList->Begin();
 		webgpuCommandList->BeginRenderPass(webgpuRenderPass);
+		DrawWebGPUBackground();
 		webgpuFrameActive = true;
 		webgpuRenderPassActive = true;
 		return AttachWebGPUEffekseerCommandList();
@@ -716,6 +812,7 @@ public:
 			webgpuPlatform->SetWindowSize(LLGI::Vec2I(width, height));
 		}
 		LLGI::SafeRelease(copyPipeline);
+		LLGI::SafeRelease(webgpuBackgroundPipeline);
 
 		return CreateWebGPUFrameResources(width, height);
 	}
@@ -808,6 +905,8 @@ public:
 #if defined(EFFEKSEER_FOR_WEB_WEBGPU)
 		webgpuEffekseerCommandList.Reset();
 		webgpuEffekseerMemoryPool.Reset();
+		LLGI::SafeRelease(webgpuBackgroundPipeline);
+		LLGI::SafeRelease(webgpuBackgroundTexture);
 		LLGI::SafeRelease(copyPipeline);
 		LLGI::SafeRelease(copyVB);
 		LLGI::SafeRelease(copyIB);

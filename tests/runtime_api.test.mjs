@@ -53,7 +53,8 @@ function createNativeModule(initValue) {
           name === "EffekseerBeginWebGPUFrame" ||
           name === "EffekseerDrawToExternalWebGPURenderPass" ||
           name === "EffekseerResizeWebGPU" ||
-          name === "EffekseerSetWebGPUPremultipliedAlpha"
+          name === "EffekseerSetWebGPUPremultipliedAlpha" ||
+          name === "EffekseerSetBackgroundImage"
         ) {
           return 1;
         }
@@ -378,6 +379,36 @@ test("WebGPU high-level frame buffer readback copies native pixels", async () =>
   assert.equal(readback.bytesPerRow, 8);
   assert.deepEqual(Array.from(readback.data), [12, 34, 56, 78, 90, 123, 156, 200]);
   assert.ok(native.calls.some((call) => call[0] === "EffekseerReadWebGPUFrameBuffer" && call[1] === 242));
+
+  context.release();
+});
+
+test("WebGPU background image uploads RGBA8 data to the native backend", async () => {
+  const native = createNativeModule(262);
+  await initRuntime({
+    backend: "webgpu",
+    device: new EventTarget(),
+    moduleFactory: async () => native,
+  });
+
+  const context = await createContext({
+    backend: "webgpu",
+    device: new EventTarget(),
+    colorFormat: "rgba8unorm",
+    width: 2,
+    height: 1,
+  });
+
+  const pixels = new Uint8Array([10, 20, 30, 255, 40, 50, 60, 255]);
+  context.setBackgroundImage(pixels, 2, 1);
+
+  const call = native.calls.find((entry) => entry[0] === "EffekseerSetBackgroundImage");
+  assert.ok(call);
+  assert.equal(call[1], 262);
+  assert.equal(call[3], pixels.byteLength);
+  assert.equal(call[4], 2);
+  assert.equal(call[5], 1);
+  assert.deepEqual(Array.from(native.HEAPU8.slice(call[2], call[2] + call[3])), Array.from(pixels));
 
   context.release();
 });

@@ -371,6 +371,20 @@ extern "C"
 		}
 	}
 
+	int EXPORT EffekseerSetBackgroundImage(Context* context, const void* data, int dataSize, int width, int height)
+	{
+#if defined(EFFEKSEER_FOR_WEB_WEBGPU)
+		return context != nullptr && context->SetWebGPUBackgroundImage(static_cast<const uint8_t*>(data), dataSize, width, height) ? 1 : 0;
+#else
+		(void)context;
+		(void)data;
+		(void)dataSize;
+		(void)width;
+		(void)height;
+		return 0;
+#endif
+	}
+
 	void EXPORT EffekseerSetListener(Context* context,
 									 float px,
 									 float py,

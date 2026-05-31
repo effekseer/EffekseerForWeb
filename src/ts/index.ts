@@ -284,6 +284,7 @@ interface NativeCore {
   SetRestorationOfStatesFlag(context: number, flag: number): void;
   CaptureBackground(context: number, x: number, y: number, width: number, height: number): void;
   ResetBackground(context: number): void;
+  SetBackgroundImage(context: number, data: number, dataSize: number, width: number, height: number): number;
   SetListener(context: number, px: number, py: number, pz: number, ax: number, ay: number, az: number, ux: number, uy: number, uz: number): void;
   SetSoundVolume(context: number, volume: number): void;
   PauseSound(context: number, paused: number): void;
@@ -315,6 +316,14 @@ const runtimes = new Map<BackendType, EffekseerRuntime>();
 
 function cwrapNumber(module: NativeModule, name: string, args: NativeArgType[]): (...args: number[]) => number {
   return module.cwrap(name, "number", args) as (...args: number[]) => number;
+}
+
+function cwrapOptionalNumber(module: NativeModule, name: string, args: NativeArgType[]): (...args: number[]) => number {
+  try {
+    return cwrapNumber(module, name, args);
+  } catch {
+    return () => 0;
+  }
 }
 
 function cwrapVoid(module: NativeModule, name: string, args: NativeArgType[]): (...args: number[]) => void {
@@ -381,6 +390,7 @@ function bindCore(module: NativeModule): NativeCore {
     SetRestorationOfStatesFlag: cwrapVoid(module, "EffekseerSetRestorationOfStatesFlag", ["number", "number"]),
     CaptureBackground: cwrapVoid(module, "EffekseerCaptureBackground", ["number", "number", "number", "number", "number"]),
     ResetBackground: cwrapVoid(module, "EffekseerResetBackground", ["number"]),
+    SetBackgroundImage: cwrapOptionalNumber(module, "EffekseerSetBackgroundImage", ["number", "number", "number", "number", "number"]),
     SetListener: cwrapVoid(module, "EffekseerSetListener", ["number", "number", "number", "number", "number", "number", "number", "number", "number", "number"]),
     SetSoundVolume: cwrapVoid(module, "EffekseerSetSoundVolume", ["number", "number"]),
     PauseSound: cwrapVoid(module, "EffekseerPauseSound", ["number", "number"]),
@@ -1277,6 +1287,21 @@ export class WebGPUEffekseerContext extends BaseEffekseerContext {
     } finally {
       this.runtime.module._free(dataPtr);
     }
+  }
+
+  setBackgroundImage(data: Uint8Array, width: number, height: number): void {
+    this.assertAlive();
+    if (width <= 0 || height <= 0 || data.byteLength < width * height * 4) {
+      throw new InvalidOperationError("Background image data must contain RGBA8 pixels for the requested size.");
+    }
+    const copy = new Uint8Array(data.byteLength);
+    copy.set(data);
+    this.runtime.withNativeBuffer(copy.buffer, (ptr, size) => {
+      const ok = this.runtime.core.SetBackgroundImage(this.nativePtr, ptr, size, width, height) !== 0;
+      if (!ok) {
+        throw new NativeInitializationError("Failed to set the native WebGPU background image.");
+      }
+    });
   }
 
   endRenderPass(): void {

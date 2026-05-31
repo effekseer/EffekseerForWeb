@@ -18,6 +18,7 @@ const frames = Number(params.get("frames") || "30");
 const cameraMode = params.get("camera") || "";
 const alphaMode = params.get("alphaMode") || "";
 const compositeBackground = params.get("compositeBackground") || "";
+const testBackground = params.get("testBackground") || "";
 const allowWebGPUReadbackSkip = params.get("allowWebGPUReadbackSkip") === "1";
 const cameraPosition = { x: 20, y: 20, z: 20 };
 const cameraTarget = { x: 0, y: 0, z: 0 };
@@ -26,6 +27,16 @@ const cameraFov = 30;
 if (compositeBackground) {
   document.documentElement.style.background = compositeBackground;
   document.body.style.background = compositeBackground;
+  canvas.style.background = "transparent";
+} else if (testBackground === "distortion-grid") {
+  const gridBackground = [
+    "linear-gradient(135deg, rgba(255,80,160,0.5) 0 2px, transparent 2px 28px)",
+    "linear-gradient(45deg, rgba(72,220,255,0.5) 0 2px, transparent 2px 28px)",
+    "repeating-linear-gradient(0deg, #152033 0 31px, #f7fbff 31px 33px, #152033 33px 64px)",
+    "repeating-linear-gradient(90deg, rgba(250,210,70,0.9) 0 31px, #0b1726 31px 33px, rgba(60,180,255,0.9) 33px 64px)",
+  ].join(", ");
+  document.documentElement.style.background = gridBackground;
+  document.body.style.background = gridBackground;
   canvas.style.background = "transparent";
 }
 
@@ -198,6 +209,87 @@ function configureCamera(context, width, height) {
   return true;
 }
 
+function createDistortionBackgroundPixels(width, height) {
+  const pixels = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const cell = ((Math.floor(x / 32) + Math.floor(y / 32)) & 1) !== 0;
+      let r = cell ? 230 : 26;
+      let g = cell ? 236 : 62;
+      let b = cell ? 246 : 112;
+
+      if (x % 64 < 3 || y % 64 < 3) {
+        r = 250;
+        g = 250;
+        b = 250;
+      }
+      if ((x + y) % 96 < 4) {
+        r = 255;
+        g = 70;
+        b = 145;
+      }
+      if ((x - y + height) % 96 < 4) {
+        r = 60;
+        g = 220;
+        b = 255;
+      }
+
+      const i = (y * width + x) * 4;
+      pixels[i] = r;
+      pixels[i + 1] = g;
+      pixels[i + 2] = b;
+      pixels[i + 3] = 255;
+    }
+  }
+  return pixels;
+}
+
+function drawWebGLDistortionBackground(gl, width, height) {
+  const wasScissorEnabled = gl.isEnabled(gl.SCISSOR_TEST);
+  const oldScissor = gl.getParameter(gl.SCISSOR_BOX);
+  const oldClearColor = gl.getParameter(gl.COLOR_CLEAR_VALUE);
+  const oldClearDepth = gl.getParameter(gl.DEPTH_CLEAR_VALUE);
+
+  gl.disable(gl.SCISSOR_TEST);
+  gl.clearColor(26 / 255, 62 / 255, 112 / 255, 1);
+  gl.clearDepth(1);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.SCISSOR_TEST);
+
+  for (let y = 0; y < height; y += 32) {
+    for (let x = 0; x < width; x += 32) {
+      const w = Math.min(32, width - x);
+      const h = Math.min(32, height - y);
+      const cell = ((Math.floor(x / 32) + Math.floor(y / 32)) & 1) !== 0;
+      if (!cell) {
+        continue;
+      }
+      gl.scissor(x, height - y - h, w, h);
+      gl.clearColor(230 / 255, 236 / 255, 246 / 255, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+    }
+  }
+
+  gl.clearColor(250 / 255, 250 / 255, 250 / 255, 1);
+  for (let x = 0; x < width; x += 64) {
+    gl.scissor(x, 0, Math.min(3, width - x), height);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+  }
+  for (let y = 0; y < height; y += 64) {
+    gl.scissor(0, y, width, Math.min(3, height - y));
+    gl.clear(gl.COLOR_BUFFER_BIT);
+  }
+
+  gl.clearColor(oldClearColor[0], oldClearColor[1], oldClearColor[2], oldClearColor[3]);
+  gl.clearDepth(oldClearDepth);
+  if (wasScissorEnabled) {
+    gl.enable(gl.SCISSOR_TEST);
+    gl.scissor(oldScissor[0], oldScissor[1], oldScissor[2], oldScissor[3]);
+  } else {
+    gl.disable(gl.SCISSOR_TEST);
+  }
+}
+
 async function analyzeCanvasPixels(sourceCanvas) {
   if (typeof createImageBitmap !== "function") {
     return undefined;
@@ -354,6 +446,12 @@ async function main() {
     webgpuStatus.contextCreated = true;
   }
 
+  let backgroundApplied = "";
+  if (testBackground === "distortion-grid" && backend === "webgpu" && typeof context.setBackgroundImage === "function") {
+    context.setBackgroundImage(createDistortionBackgroundPixels(canvas.width, canvas.height), canvas.width, canvas.height);
+    backgroundApplied = "native-webgpu-background-image";
+  }
+
   smokeStage = "load-effect";
   const effect = await context.loadEffect(effectPath, { redirect: encodeResourceUrl });
   smokeStage = "play-effect";
@@ -373,6 +471,11 @@ async function main() {
   } else {
     for (let i = 0; i < frames; i++) {
       context.update(1);
+      if (testBackground === "distortion-grid" && gl && typeof context.captureBackground === "function") {
+        drawWebGLDistortionBackground(gl, renderCanvas.width, renderCanvas.height);
+        context.captureBackground(0, 0, renderCanvas.width, renderCanvas.height);
+        backgroundApplied = "webgl-captured-distortion-grid";
+      }
       context.draw();
       await new Promise((resolve) => requestAnimationFrame(resolve));
     }
@@ -419,6 +522,8 @@ async function main() {
     stage: smokeStage,
     camera: cameraMode || "default",
     threeCamera,
+    testBackground,
+    backgroundApplied,
     frames,
     handleExists: handle?.exists ?? false,
     changedPixels: pixelStats?.changedPixels,
