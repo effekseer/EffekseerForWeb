@@ -446,6 +446,39 @@ test("WebGPU low-level render pass path imports the external render pass", async
   );
 });
 
+test("WebGPU low-level render pass path supports rg11b10ufloat color format", async () => {
+  const native = createNativeModule(313);
+  await initRuntime({
+    backend: "webgpu",
+    device: new EventTarget(),
+    moduleFactory: async () => native,
+  });
+
+  const context = await createContext({
+    backend: "webgpu",
+    device: new EventTarget(),
+    colorFormat: "rgba8unorm",
+  });
+
+  context.drawToRenderPass(
+    {},
+    {
+      colorFormat: "rg11b10ufloat",
+      depthFormat: "depth32float",
+    },
+  );
+
+  assert.ok(
+    native.calls.some(
+      (call) =>
+        call[0] === "EffekseerDrawToExternalWebGPURenderPass" &&
+        call[1] === 313 &&
+        call[3] === 5 &&
+        call[4] === 1,
+    ),
+  );
+});
+
 test("setCameraFromThree updates and copies Three.js camera matrices", async () => {
   const native = createNativeModule(404);
   await initRuntime({

@@ -212,6 +212,8 @@ Effekseer::Backend::TextureFormatType ToBackendColorFormat(int32_t format)
 		return Effekseer::Backend::TextureFormatType::R8G8B8A8_UNORM_SRGB;
 	case 4:
 		return Effekseer::Backend::TextureFormatType::B8G8R8A8_UNORM_SRGB;
+	case 5:
+		return Effekseer::Backend::TextureFormatType::RG11B10_UFLOAT;
 	default:
 		return Effekseer::Backend::TextureFormatType::R8G8B8A8_UNORM;
 	}

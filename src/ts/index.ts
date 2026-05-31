@@ -432,7 +432,7 @@ async function requestWebGPUDevice(options: WebGPURuntimeOptions): Promise<GPUDe
     throw new WebGPUUnavailableError("Failed to request a WebGPU adapter.");
   }
 
-  const optional = ["float32-filterable", "texture-formats-tier2", "texture-compression-bc"] as GPUFeatureName[];
+  const optional = ["float32-filterable", "texture-formats-tier2", "texture-compression-bc", "rg11b10ufloat-renderable"] as GPUFeatureName[];
   const requiredFeatures = optional.filter((feature) => adapter.features.has(feature));
   return adapter.requestDevice({
     ...options.deviceDescriptor,
@@ -450,6 +450,8 @@ function toNativeWebGPUColorFormat(format: GPUTextureFormat | undefined): number
       return 3;
     case "bgra8unorm-srgb":
       return 4;
+    case "rg11b10ufloat":
+      return 5;
     default:
       throw new InvalidOperationError(`Unsupported WebGPU color format for Effekseer: ${format}`);
   }
