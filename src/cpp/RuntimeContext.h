@@ -37,7 +37,6 @@
 #include <LLGI.Platform.h>
 #include <LLGI.Shader.h>
 #include <LLGI.Texture.h>
-#include <Utils/LLGI.CommandListPool.h>
 #include <WebGPU/LLGI.CompilerWebGPU.h>
 #include <WebGPU/LLGI.PlatformWebGPU.h>
 #endif
@@ -262,7 +261,6 @@ public:
 	LLGI::Platform* webgpuPlatform = nullptr;
 	LLGI::Graphics* webgpuGraphics = nullptr;
 	LLGI::SingleFrameMemoryPool* webgpuMemoryPool = nullptr;
-	std::shared_ptr<LLGI::CommandListPool> webgpuCommandListPool = nullptr;
 	std::shared_ptr<LLGI::CommandList> webgpuCommandList = nullptr;
 	LLGI::RenderPass* webgpuRenderPass = nullptr;
 	LLGI::Texture* webgpuColorBuffer = nullptr;
@@ -611,7 +609,6 @@ public:
 		}
 
 		webgpuMemoryPool = webgpuGraphics->CreateSingleFrameMemoryPool(1024 * 1024 * 8, 128);
-		webgpuCommandListPool = std::make_shared<LLGI::CommandListPool>(webgpuGraphics, webgpuMemoryPool, 3);
 		if (!CreateWebGPUFrameResources(width, height))
 		{
 			return false;
@@ -670,7 +667,9 @@ public:
 		}
 
 		webgpuMemoryPool->NewFrame();
-		webgpuCommandList = LLGI::CreateSharedPtr(webgpuCommandListPool->Get(true));
+		// Pool acquisition waits for the GPU via Asyncify. Drawing must stay synchronous
+		// while the caller owns an external render pass, so use a fresh command list.
+		webgpuCommandList = LLGI::CreateSharedPtr(webgpuGraphics->CreateCommandList(webgpuMemoryPool));
 
 		LLGI::Color8 clearColor(0, 0, 0, webgpuPremultipliedAlpha ? 0 : 255);
 		webgpuRenderPass->SetClearColor(clearColor);
@@ -693,7 +692,9 @@ public:
 		}
 
 		webgpuMemoryPool->NewFrame();
-		webgpuCommandList = LLGI::CreateSharedPtr(webgpuCommandListPool->Get(true));
+		// Pool acquisition waits for the GPU via Asyncify. Drawing must stay synchronous
+		// while the caller owns an external render pass, so use a fresh command list.
+		webgpuCommandList = LLGI::CreateSharedPtr(webgpuGraphics->CreateCommandList(webgpuMemoryPool));
 		webgpuCommandList->Begin();
 		if (!webgpuCommandList->BeginRenderPassWithPlatformPtr(renderPassEncoder))
 		{
@@ -915,7 +916,6 @@ public:
 		LLGI::SafeRelease(copyVS);
 		LLGI::SafeRelease(copyPS);
 		ReleaseWebGPUFrameResources();
-		webgpuCommandListPool.reset();
 		LLGI::SafeRelease(webgpuMemoryPool);
 		LLGI::SafeRelease(webgpuGraphics);
 		LLGI::SafeRelease(webgpuPlatform);
