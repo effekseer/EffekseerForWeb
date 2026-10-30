@@ -1,6 +1,6 @@
 {
   "name": "effekseer-for-web",
-  "version": "0.1.0",
+  "version": "1.80.8",
   "description": "Effekseer runtime for WebGL and WebGPU.",
   "type": "module",
   "main": "dist/index.js",
